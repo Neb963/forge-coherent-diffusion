@@ -10,6 +10,9 @@ from pathlib import Path
 
 import gradio as gr
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
 mod=types.ModuleType("modules")
 scripts=types.ModuleType("modules.scripts")
 scripts.Script=type("Script",(object,),{})
