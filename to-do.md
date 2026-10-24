@@ -5,7 +5,7 @@ Read `PHASES.md` first. **Exactly one phase per chat.** Mark DONE only with evid
 | Phase | Status | Depends on |
 |---|---|---|
 | P01 — Foundation, probes, CRF, tests | **DONE (offline acceptance; live Forge blocked)** | — |
-| P02 — Regional editor and CRF UI | IN PROGRESS | P01 |
+| P02 — Regional editor and CRF UI | **IMPLEMENTED OFFLINE; acceptance HOLD (real Forge host unavailable)** | P01 |
 | P03 — SDXL synchronized tiled generation | READY | P01 |
 | P04 — SDXL global coherence | BLOCKED | P03 |
 | P05 — Anima + Q4 GGUF parity | BLOCKED | P01, P03, P04 findings |
@@ -54,7 +54,7 @@ Read `PHASES.md` first. **Exactly one phase per chat.** Mark DONE only with evid
 
 ## Active phase — P02: Integrated regional editor and CRF workflow (2026-10-24)
 
-**Status:** IN PROGRESS; P01 merged in PR #1; branch `phase/P02-editor`.
+**Status:** implementation and isolated Gradio/browser verification complete; **live Forge acceptance BLOCKED** (no installed Forge Neo host available). Remain on branch `phase/P02-editor`, draft PR #2; no merge or P03 progression in this chat.
 
 ### Actual repository inspection / acceptance boundaries
 - P01 supplies a strict Python CRF v1 validator, bbox/polygon raster and read-only Forge `scripts.Script` diagnostic. No editor is mounted yet.
@@ -62,10 +62,19 @@ Read `PHASES.md` first. **Exactly one phase per chat.** Mark DONE only with evid
 - P02 must preserve prototype UX, maintain a single CRF source, make mask assets data-only/verifiable and ship a truthful editor-only Forge mount. No P03/P05 sampler or model inference claims. Live Forge runtime was unavailable during P01; retry only if exposed.
 
 ### Detailed phase plan — committed BEFORE implementation
-- [ ] Integrate a complete interactive, full-width editor into existing Forge `scripts.Script` without changing the read-only probe or sampling path; keep source UI available standalone for browser verification. Local, no CDN assets.
-- [ ] Reuse the prototype's canvas/layer/inspector functions and repair state invariants: five-region visibility while editing, box/polygon/brush/erase, locks/visibility/enabled, resize/polygon points, zoom/pan, reorder/duplicate/delete, numeric geometry, prompt and adapter edits, independent undo/redo and autosave.
-- [ ] Bring export/paste/JSON file import under CRF v1: no `ui` or `stroke` in exported schema; preserve null/missing/empty prompts and persistent editor properties using CRF `regions[].extensions`; validate before application, explicit preview/replace/merge/conflict mapping, aspect policy and safe failure.
-- [ ] Raster brush regions must use real bounded mask assets and ZIP archive import/export (hash/path/size/mime/duplicate/decompression checks); no fake generated masks or silent data loss; reject unsafe/missing assets transactionally.
+- [x] Integrate a complete interactive, full-width editor into existing Forge `scripts.Script` without changing the read-only probe or sampling path; keep source UI available standalone for browser verification. Local, no CDN assets.
+- [x] Reuse the prototype's canvas/layer/inspector functions and repair state invariants: five-region visibility while editing, box/polygon/brush/erase, locks/visibility/enabled, resize/polygon points, zoom/pan, reorder/duplicate/delete, numeric geometry, prompt and adapter edits, independent undo/redo and autosave.
+- [x] Bring export/paste/JSON file import under CRF v1: no `ui` or `stroke` in exported schema; preserve null/missing/empty prompts and persistent editor properties using CRF `regions[].extensions`; validate before application, explicit preview/replace/merge/conflict mapping, aspect policy and safe failure.
+- [x] Raster brush regions must use real bounded mask assets and ZIP archive import/export (hash/path/size/mime/duplicate/decompression checks); no fake generated masks or silent data loss; reject unsafe/missing assets transactionally.
 - [ ] Add deterministic correct `weighted` / `priority` effective mask previews and coverage warnings with separate visible versus enabled semantics; clearly label unconnected generation/capability controls.
-- [ ] Add browser-based UI interaction tests including five visible regions, undo/reload/CRF exports/imports, bad inputs, brush and masks, overlaps, sibling isolation and aspect mapping; Python ZIP/CRF semantic tests and CI.
+- [x] Add browser-based UI interaction tests including five visible regions, undo/reload/CRF exports/imports, bad inputs, brush and masks, overlaps, sibling isolation and aspect mapping; Python ZIP/CRF semantic tests and CI.
 - [ ] Run local/CI tests on published commit, verify repository branch and PR, record exact evidence and unavailable Forge/browser/GPU tests. Mark DONE only if P02 acceptance is demonstrated; do not advance to P03.
+
+### P02 implementation evidence and acceptance boundary (2026-10-24)
+- **Canonical publish checkpoint:** full-width top-level **Coherent Diffusion** tab registered with Forge Neo's documented `script_callbacks.on_ui_tabs` API, with P01 Script diagnostics preserved in txt2img and no diffusion callbacks/patches. Editor source is self-contained `coherent_diffusion/editor/index.html` (no remote assets); independently verified inside a real Gradio 4 UI using a minimal Forge callback stub, not a running Forge Neo application.
+- **Editor controls implemented:** five initial persistent visible regions; box, polygon, brush/eraser, select/move/resize, canvas and inspector edits, visibility/lock/enabled, layer reorder/duplicate/delete, prompt/negative/LoRA-reference editing, zoom/pan, local autosave with quota warning, explicit new-scene confirmation and per-scene undo/redo. No sampler backend or LoRA activation.
+- **CRF interoperability:** strict fenced/raw v1 JSON validation with schema-compatible extension metadata; separate mask files in portable `.crf.zip` with PNG SHA-256, path, dimension, CRC and bounded ZIP central-directory/size checks. Browser conformance compared with all 11 valid / 28 invalid Python v1 fixtures (mask manifest is semantically valid CRF but intentionally refused without binary ZIP contents); transactional replace/merge and aspect policy.
+- **Security/negative cases:** Python `load_crf_zip` rejects bad checksums, missing/extra entries, duplicate/path-traversal names, size mismatch/invalid headers; browser rejects bad ZIP and leaves the current scene unchanged. Browser WebP mask editing is not supported; use PNG.
+- **CI evidence:** commit `d13cd05f8599338fd1388e063ac9091cbf74e273`, [GitHub Actions run 40135683112](https://github.com/Neb963/forge-coherent-diffusion/actions/runs/40135683112) **SUCCESS**, Python 3.11 **30 unittest PASS**, Chromium editor interaction regression **PASS** (including 25 undo/redo actions, polygon/box/numeric/aspect-merge, masks, CRF Python round-trip), and isolated real Gradio 4.40 tab/iframe interaction **PASS**. Gradio smoke uses a compatibility-pinned FastAPI/Starlette environment; not a claim about user's installed Forge packages.
+- **Unresolved acceptance:** actual Forge Neo extension discovery, generated Forge page tab render, user's browser CSP/localStorage and target-device large mask responsiveness **NOT TESTED** because installed Forge, GPU and user's browser are unavailable here. Region influence is a local approximate display, not P06 effective conditioning compiler coefficients. P02 cannot be marked DONE under `PHASES.md` until the relevant live Forge display/UX check passes; do not invent such evidence.
+- **Publication:** branch `phase/P02-editor`, [draft PR #2](https://github.com/Neb963/forge-coherent-diffusion/pull/2). Preserve this tested checkpoint and do not squash merge until remaining required acceptance is demonstrated; **do not start P03 in this chat**.
