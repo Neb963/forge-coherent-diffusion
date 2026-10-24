@@ -10,7 +10,7 @@ Place this repository folder at `Forge Neo/extensions/coherent-diffusion/` and r
 
 The P01 CRF validator uses Python `jsonschema==4.25.1`; install `python -m pip install -r requirements.txt` to validate CRF outside Forge. The diagnostic panel itself has no additional runtime dependency beyond Forge's Gradio/Python stack.
 
-For P02 import/export and browser tests see [docs/P02_EDITOR.md](docs/P02_EDITOR.md). For source-level API notes, installation diagnostics and Q4 GGUF limitations see [docs/P01_RUNTIME_PROBES.md](docs/P01_RUNTIME_PROBES.md). **Live Forge Neo testing is reserved for P07; CI does not perform it.** Nothing in P01 replaces the installed Anima text-encoder loader.
+For the P03 tensor sampler, supported SDXL Euler contract and CPU/VRAM evidence boundaries see [docs/P03_SDXL_SAMPLER.md](docs/P03_SDXL_SAMPLER.md). For P02 import/export and browser tests see [docs/P02_EDITOR.md](docs/P02_EDITOR.md). For source-level API notes, installation diagnostics and Q4 GGUF limitations see [docs/P01_RUNTIME_PROBES.md](docs/P01_RUNTIME_PROBES.md). **Live Forge Neo testing is reserved for P07; CI does not perform it.** Nothing in P01 replaces the installed Anima text-encoder loader.
 
 ## Offline checks
 
