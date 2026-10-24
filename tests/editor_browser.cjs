@@ -161,6 +161,52 @@ const { spawnSync } = require('node:child_process');
   await page.locator('#modalClose').click();
   assert.equal(await page.locator('#layerList .layer').count(),12,'conformance previews never mutate scene');
 
+
+  // Polygon, rectangle, numeric inspector, and visibility must retain independent siblings.
+  const beforeDraw=await page.locator('#layerList .layer').count();
+  let box=await page.locator('#surface').boundingBox();
+  await page.locator('[data-tool="polygon"]').click();
+  for(const [ax,ay] of [[.23,.25],[.37,.25],[.31,.39]]){
+    await page.mouse.click(box.x+box.width*ax,box.y+box.height*ay);
+  }
+  await page.keyboard.press('Enter');
+  assert.equal(await page.locator('#layerList .layer').count(),beforeDraw+1,'polygon completed');
+  await page.locator('[data-tool="box"]').click();
+  await page.mouse.move(box.x+box.width*.12,box.y+box.height*.49);
+  await page.mouse.down();
+  await page.mouse.move(box.x+box.width*.3,box.y+box.height*.64,{steps:6});
+  await page.mouse.up();
+  assert.equal(await page.locator('#layerList .layer').count(),beforeDraw+2,'rectangle drawn');
+  const geom0=page.locator('#geom0');
+  await geom0.fill('25.0');
+  await geom0.blur();
+  assert.equal(await geom0.inputValue(),'25.0','numeric bounding box edited');
+  const rectChange=page.waitForEvent('download');
+  await page.locator('#exportBtn').click();
+  const geomDownload=await rectChange;
+  const changed=JSON.parse(fs.readFileSync(await geomDownload.path(),'utf8'));
+  assert.ok(Math.abs(changed.regions.at(-1).geometry.bbox[0]-.25)<.001,'numeric edit changes exported canonical coordinates');
+  assert.deepEqual(changed.regions.slice(0,6).map(r=>({id:r.id,geometry:r.geometry})),
+    exported.regions.map(r=>({id:r.id,geometry:r.geometry})),'new shapes did not mutate existing siblings');
+
+  // Explicit aspect fit while merging: new IDs, geometry and original global scene preserved.
+  const imported=JSON.parse(JSON.stringify(exported));
+  imported.canvas.width=1024;imported.canvas.height=1024;
+  await page.locator('#importBtn').click();
+  await page.locator('#importMode').selectOption('merge');
+  await page.locator('#aspectImport').selectOption('fit_letterbox');
+  await page.locator('#importTextarea').fill(JSON.stringify(imported));
+  await page.locator('#validateBtn').click();
+  assert.equal(await page.locator('#applyImportBtn').isDisabled(),false,'aspect remap validates');
+  await page.locator('#applyImportBtn').click();
+  assert.equal(await page.locator('#layerList .layer').count(),beforeDraw+2+6,'merge keeps both compositions');
+  const mergedDownload=page.waitForEvent('download');
+  await page.locator('#exportBtn').click();
+  const merged=JSON.parse(fs.readFileSync(await (await mergedDownload).path(),'utf8'));
+  assert.equal(new Set(merged.regions.map(r=>r.id)).size,merged.regions.length,'merge resolved region ID collisions');
+  assert.deepEqual(merged.global,changed.global,'merge did not overwrite global prompts');
+  assert.equal(merged.canvas.width,4096,'merge preserved host canvas width');
+
   assert.deepEqual(errors,[],'no uncaught browser script errors');
   await browser.close();await new Promise(resolve=>server.close(resolve));
   console.log('P02 browser editor: PASS (5 regions, edit, export, Python conformance, reload, bad import, brush ZIP)');
