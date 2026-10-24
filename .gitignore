@@ -3,4 +3,4 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.egg-info/
-bencHmarks/*.jsonl
+benchmarks/*.jsonl
