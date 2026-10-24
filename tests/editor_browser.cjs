@@ -12,6 +12,14 @@ const { spawnSync } = require('node:child_process');
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const url='http://127.0.0.1:'+server.address().port+'/editor';
   const browser = await chromium.launch({ headless: true });
+  // A srcdoc mount approximates the transport used by the Forge/Gradio wrapper.
+  const iframeHost=await browser.newPage({viewport:{width:1500,height:1050}});
+  const escaped=root.toString('utf8').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+  await iframeHost.goto(url);
+  await iframeHost.setContent('<iframe title="P02 editor" style="width:100%;height:950px" srcdoc="'+escaped+'"></iframe>');
+  await iframeHost.frameLocator('iframe').locator('#layerList .layer').first().waitFor();
+  assert.equal(await iframeHost.frameLocator('iframe').locator('#layerList .layer').count(),5,'srcdoc iframe loads executable editor');
+  await iframeHost.close();
   const page = await browser.newPage({ viewport: { width: 1500, height: 1050 }, acceptDownloads: true });
   const errors = [];
   page.on('pageerror', err => errors.push(err.message));
@@ -80,6 +88,18 @@ const { spawnSync } = require('node:child_process');
   assert.equal(await page.locator('#applyImportBtn').isDisabled(),false,'ZIP verified before apply');
   await page.locator('#applyImportBtn').click();
   assert.equal(await page.locator('#layerList .layer').count(),7,'masked CRF round-trip');
+  // A damaged mask must not replace the current scene.
+  await page.locator('#importBtn').click();
+  const corrupted=Buffer.from(bytes);
+  const pngStart=corrupted.indexOf(Buffer.from([137,80,78,71,13,10,26,10]));
+  assert.ok(pngStart>0,'PNG signature present in archive');
+  corrupted[pngStart+40]^=0xff;
+  await page.locator('#importFile').setInputFiles({name:'bad.crf.zip',mimeType:'application/zip',buffer:corrupted});
+  await page.locator('#validateBtn').click();
+  assert.equal(await page.locator('#applyImportBtn').isDisabled(),true,'corrupted ZIP cannot apply');
+  await page.locator('#modalClose').click();
+  assert.equal(await page.locator('#layerList .layer').count(),7,'ZIP corruption keeps previous scene');
+
 
   // Effective overlay is computed from the canonical regions, not a static illustration.
   await page.locator('[data-view="influence"]').click();
