@@ -24,9 +24,11 @@ python -m unittest discover -s tests -v
 npm install --no-save playwright@1.56.1
 npx playwright install chromium
 node tests/editor_browser.cjs
+# Requires the isolated Gradio 4.40 compatibility environment used in CI:
+node tests/gradio_browser.cjs
 ```
 
-CI runs the Python and Chromium checks in separate jobs. The browser test loads the standalone editor at a real local HTTP origin, confirms initial five-region visibility, state edits, round-trips JSON and PNG ZIP through the Python validators, autosave/reload, import safety, undo/redo, influence sample, geometry, and CRF conformance. It does **not** run a real Forge host.
+CI runs the Python and Chromium checks in separate jobs. The browser test loads the standalone editor at a real local HTTP origin, confirms initial five-region visibility, state edits, round-trips JSON and PNG ZIP through the Python validators, autosave/reload, import safety, undo/redo, influence sample, geometry, and CRF conformance. It also launches an actual Gradio 4.40 Blocks instance using the registered Forge tab callback with mocked Forge modules and drives the UI via Chromium. It does **not** run a real Forge Neo application or inspect GPU/model inference.
 
 ## Optional local Forge smoke (not proved by GitHub Actions)
 
@@ -43,3 +45,8 @@ CI runs the Python and Chromium checks in separate jobs. The browser test loads 
 - PNG masks are supported in the browser archive path. The Python archive validator also accepts WebP headers, but browser re-edit/import of WebP is not validated. This is not a promise of WebP interoperability.
 - Large-canvas/large-number-of-masks responsiveness and local quota on the user's browser remain to be measured. P02 cannot make a tested VRAM claim.
 - Full regional attention, LoRA activation/isolation, model/Q4 encode, ControlNet, actual output, OOM cleanup and low-VRAM GPU acceptance are later phases.
+
+## Latest isolated acceptance evidence
+
+- [GitHub Actions 40135683112](https://github.com/Neb963/forge-coherent-diffusion/actions/runs/40135683112), commit `d13cd05f`: Python 3.11 **30 tests PASS**; browser editor regression **PASS**; actual Gradio 4.40 top-level tab interaction **PASS**. The isolated Gradio smoke pins compatible FastAPI/Starlette to avoid an unrelated Gradio 4 runtime mismatch.
+- The installed user's Forge Neo, its actual Gradio/FastAPI patchset, GPU, model loader and browser policies were not accessible; the required *live Forge* display acceptance remains **NOT TESTED**, and PR #2 stays draft.
