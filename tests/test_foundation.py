@@ -7,6 +7,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from coherent_diffusion.crf import CRFError, canonical_json, parse_crf, parse_validate, validate_crf
@@ -130,7 +131,7 @@ class TileTests(unittest.TestCase):
         out=synchronized_step([[2.]*5 for _ in range(3)],w,
             lambda crop,win:[[1.]*len(r) for r in crop],
             lambda z,p:z-p)
-        self.assertEqual(out,[[1.]*5 for _ in range(3))
+        self.assertEqual(out,[[1.]*5 for _ in range(3)])
 
 class EvidenceTests(unittest.TestCase):
     def test_metadata_status_and_serialization(self):
@@ -174,7 +175,7 @@ class EvidenceTests(unittest.TestCase):
         scr.Script=type("Script",(object,),{})
         scr.AlwaysVisible=object()
         mod.scripts=scr
-        with unittest.mock.patch.dict(sys.modules,{"gradio":gr,"modules":mod,"modules.scripts":scr}):
+        with mock.patch.dict(sys.modules,{"gradio":gr,"modules":mod,"modules.scripts":scr}):
             spec=importlib.util.spec_from_file_location("cd_probe_script",HERE.parent/"scripts/coherent_diffusion.py")
             instance=importlib.util.module_from_spec(spec)
             spec.loader.exec_module(instance)
