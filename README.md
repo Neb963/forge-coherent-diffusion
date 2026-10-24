@@ -2,7 +2,7 @@
 
 Native high-resolution coherent txt2img for **SDXL and Anima**, with a multilayer region editor and CRF prompt interchange.
 
-**P02 implementation branch:** the full-scene browser regional editor and CRF v1 JSON/ZIP workflow are implemented for offline verification. **No diffusion generation, regional conditioning or model inference is implemented.** The HTML in docs remains the design reference; live Forge installation/display is deliberately deferred to P07. See [P02 editor details](docs/P02_EDITOR.md), [PHASES.md](PHASES.md) and [to-do.md](to-do.md). See [PHASES.md](PHASES.md) and [to-do.md](to-do.md).
+**P03 implementation branch:** the full-scene browser regional editor and CRF v1 JSON/ZIP workflow are implemented for offline verification. **P03 adds an offline-invokable, CPU-resident SDXL synchronous Euler sampler and guarded Forge model bridge; it is not enabled in the Forge UI and has not undergone live SDXL inference.** The HTML in docs remains the design reference; live Forge installation/display is deliberately deferred to P07. See [P02 editor details](docs/P02_EDITOR.md), [PHASES.md](PHASES.md) and [to-do.md](to-do.md). See [PHASES.md](PHASES.md) and [to-do.md](to-do.md).
 
 ## Install P02 editor + P01 diagnostic panel
 
@@ -10,7 +10,7 @@ Place this repository folder at `Forge Neo/extensions/coherent-diffusion/` and r
 
 The P01 CRF validator uses Python `jsonschema==4.25.1`; install `python -m pip install -r requirements.txt` to validate CRF outside Forge. The diagnostic panel itself has no additional runtime dependency beyond Forge's Gradio/Python stack.
 
-For P02 import/export and browser tests see [docs/P02_EDITOR.md](docs/P02_EDITOR.md). For source-level API notes, installation diagnostics and Q4 GGUF limitations see [docs/P01_RUNTIME_PROBES.md](docs/P01_RUNTIME_PROBES.md). **Live Forge Neo testing is reserved for P07; CI does not perform it.** Nothing in P01 replaces the installed Anima text-encoder loader.
+For the P03 tensor sampler, supported SDXL Euler contract and CPU/VRAM evidence boundaries see [docs/P03_SDXL_SAMPLER.md](docs/P03_SDXL_SAMPLER.md). For P02 import/export and browser tests see [docs/P02_EDITOR.md](docs/P02_EDITOR.md). For source-level API notes, installation diagnostics and Q4 GGUF limitations see [docs/P01_RUNTIME_PROBES.md](docs/P01_RUNTIME_PROBES.md). **Live Forge Neo testing is reserved for P07; CI does not perform it.** Nothing in P01 replaces the installed Anima text-encoder loader.
 
 ## Offline checks
 
