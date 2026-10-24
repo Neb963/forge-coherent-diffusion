@@ -2,7 +2,7 @@
 
 ## Scope and boundaries
 
-P02 provides a local, full-scene composition editor, not image generation. The editor is bundled as `coherent_diffusion/editor/index.html` and mounted in a Gradio accordion of `scripts/coherent_diffusion.py`. It does not patch Forge sampling, text encoding, LoRA or ControlNet. The P01 diagnostic panel is retained. Both SDXL and Anima settings are composition preferences; neither model is invoked.
+P02 provides a local, full-scene composition editor, not image generation. The editor is bundled as `coherent_diffusion/editor/index.html` and mounted through Forge's documented `script_callbacks.on_ui_tabs` top-level tab hook in `scripts/coherent_diffusion.py`. It does not patch Forge sampling, text encoding, LoRA or ControlNet. The P01 diagnostic panel is retained. Both SDXL and Anima settings are composition preferences; neither model is invoked.
 
 The UI derives from the committed `docs/UI_PROTOTYPE.html` design and is self-contained (no CDN or remote images). The five default visible layers are Sky, Ocean, Beach, Clouds and Sun. Layer visibility (`visible`) is purely visual; `enabled` denotes future generation intent. Geometry is normalized top-left, independent of viewport zoom. Layer edit, box/polygon/brush/eraser, inspector, prompts, LoRA **references only**, undo/redo and draft save are browser-side operations.
 
