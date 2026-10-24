@@ -28,8 +28,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r requirements.txt "gradio==4.40.0" "huggingface_hub==0.36.2"
       - run: npm install --no-save playwright@1.56.1
       - run: npx playwright install --with-deps chromium
       - name: Editor Chromium interaction / CRF archive round-trip
         run: node tests/editor_browser.cjs
+      - name: Verify actual Gradio 4 iframe rendering
+        run: node tests/gradio_browser.cjs
