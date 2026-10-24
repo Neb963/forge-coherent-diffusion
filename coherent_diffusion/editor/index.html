@@ -124,6 +124,8 @@ const region=()=>scene.regions.find(r=>r.id===selected), sorted=()=>[...scene.re
 let idCounter=0;const rid=()=>`region-${Date.now().toString(36)}-${++idCounter}`;
 function save(){try{localStorage.setItem(KEY,JSON.stringify({scene,settings}))}catch(e){console.warn(e)}}
 function saveSoon(){clearTimeout(saveTimer);saveTimer=setTimeout(save,300)}
+window.addEventListener('pagehide',save);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')save()});
 function snapshot(){return JSON.stringify(scene)}
 function pushUndo(before){if(before && before!==snapshot()){undoStack.push(before);if(undoStack.length>80)undoStack.shift();redoStack=[];saveSoon();updateUndoButtons()}}
 function mutate(fn){const before=snapshot();fn();pushUndo(before);render()}
@@ -355,6 +357,7 @@ function saveDownload(bytes,name,type){
  const url=URL.createObjectURL(new Blob([bytes],{type})),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 async function downloadJSON(){
+ save();
  try{
   const {doc,images}=await buildExport(),enc=new TextEncoder(),json=enc.encode(JSON.stringify(doc,null,2));
   if(!images.size){saveDownload(json,'coherent-regions-scene.crf.json','application/json');toast('CRF JSON exported and validated');return}
@@ -365,6 +368,7 @@ async function downloadJSON(){
  }catch(e){toast('Export blocked: '+e.message,true)}
 }
 async function copyJSON(){
+ save();
  try{const {doc,images}=await buildExport();if(images.size)throw Error('Masks require CRF ZIP export; JSON alone would lose binary data');const text=JSON.stringify(doc,null,2);
   await navigator.clipboard.writeText(text);toast('Valid CRF JSON copied');
  }catch(e){toast('Cannot copy CRF: '+e.message,true)}
