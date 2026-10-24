@@ -24,9 +24,9 @@ function scene(regions,policy='weighted',base=1,extra={}){
   };
 }
 async function mount(page,document){
-  await page.evaluate(({key,document})=>{
-    localStorage.setItem(key,JSON.stringify({scene:document,settings:{model:'sdxl',strategy:'progressive',tile:'auto'}}));
-  },{key:KEY,document});
+  // pagehide autosave would overwrite a direct localStorage write on reload.
+  // The single addInitScript below restores this fixture before the editor boot script.
+  await page.evaluate(data=>{window.name='__P02_TEST_SCENE__'+JSON.stringify(data)},document);
   await page.reload();
   await page.locator('[data-view="influence"]').click();
 }
@@ -61,6 +61,13 @@ function setLoRA(name,mode='approximate'){
     const page=await browser.newPage({viewport:{width:1500,height:1050}});
     const errors=[];
     page.on('pageerror',e=>errors.push(e.message));
+    await page.addInitScript(key=>{
+      const prefix='__P02_TEST_SCENE__';
+      if(window.name.startsWith(prefix)){
+        const document=JSON.parse(window.name.slice(prefix.length));
+        localStorage.setItem(key,JSON.stringify({scene:document,settings:{model:'sdxl',strategy:'progressive',tile:'auto'}}));
+      }
+    },KEY);
     await page.goto('http://127.0.0.1:'+server.address().port+'/');
 
     const bottom=region('bottom',{blend:{weight:1,feather_px:0,z_index:1},color:'#0000ff'});
