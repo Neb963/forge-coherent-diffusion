@@ -15,6 +15,18 @@ class UnsupportedSDXL(RuntimeError):
     pass
 
 
+def _host_oom(exc):
+    """Recognize Forge's own OOM classification without string heuristics."""
+    import torch
+    if isinstance(exc, (MemoryError, torch.cuda.OutOfMemoryError)):
+        return True
+    try:
+        from backend import memory_management
+        return bool(memory_management.is_oom(exc))
+    except (ImportError, AttributeError):
+        return False
+
+
 class _PromptBatch(list):
     """SDXL's existing get_learned_conditioning reads these request metadata."""
     def __init__(self, prompt: str, width: int, height: int, negative: bool):
@@ -167,7 +179,9 @@ class ForgeSDXL:
                     inference_dtype=inference_dtype,
                     cancelled=cancelled, progress=progress, cleanup=self.cleanup,
                     max_cpu_bytes=max_cpu_bytes, max_window_bytes=max_window_bytes)
-            except (MemoryError, torch.cuda.OutOfMemoryError) as error:
+            except Exception as error:
+                if not _host_oom(error):
+                    raise
                 self.cleanup()
                 next_tile = max(min_tile_px, (p.tile_px // (2 * p.scale)) * p.scale)
                 if attempt >= max_retiles or next_tile >= p.tile_px:
