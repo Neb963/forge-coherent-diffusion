@@ -6,7 +6,7 @@ Native high-resolution coherent txt2img for **SDXL and Anima**, with a multilaye
 
 ## Install P02 editor + P01 diagnostic panel
 
-Place this repository folder at `Forge Neo/extensions/coherent-diffusion/` and restart Forge Neo. In txt2img expand **Coherent Diffusion — regional composition editor (P02)** for the editor, or **Coherent Diffusion — diagnostics only** for model inspection. The panel is editor-only and cannot start diffusion. Clicking **Inspect loaded model** reports non-sensitive capability/encoder metadata about an already-loaded model. Optional process capture does not change the sampler.
+Place this repository folder at `Forge Neo/extensions/coherent-diffusion/` and restart Forge Neo. Open the full-width **Coherent Diffusion** top-level tab for the regional editor. In txt2img, **Coherent Diffusion — diagnostics only** remains available for model inspection. P02 cannot start diffusion. Clicking **Inspect loaded model** reports non-sensitive capability/encoder metadata about an already-loaded model. Optional process capture does not change the sampler.
 
 The P01 CRF validator uses Python `jsonschema==4.25.1`; install `python -m pip install -r requirements.txt` to validate CRF outside Forge. The diagnostic panel itself has no additional runtime dependency beyond Forge's Gradio/Python stack.
 
