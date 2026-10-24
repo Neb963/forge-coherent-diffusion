@@ -7,7 +7,7 @@ const { pathToFileURL } = require('node:url');
 const { spawnSync } = require('node:child_process');
 
 (async () => {
-  const browser = await chromium.launch({ headless: true, args: ['--disable-web-security'] });
+  const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1500, height: 1050 }, acceptDownloads: true });
   const errors = [];
   page.on('pageerror', err => errors.push(err.message));
@@ -79,4 +79,4 @@ const { spawnSync } = require('node:child_process');
   assert.deepEqual(errors,[],'no uncaught browser script errors');
   await browser.close();
   console.log('P02 browser editor: PASS (5 regions, edit, export, Python conformance, reload, bad import, brush ZIP)');
-})().catch(e=>{console.error(e);process.exitCode=1});
+})().catch(e=>{console.error(e);process.exit(1)});
