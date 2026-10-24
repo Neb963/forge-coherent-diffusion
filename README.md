@@ -2,7 +2,7 @@
 
 Native high-resolution coherent txt2img for **SDXL and Anima**, with a multilayer region editor and CRF prompt interchange.
 
-**P02 implementation branch:** the full-scene browser regional editor and CRF v1 JSON/ZIP workflow are implemented for offline verification. **No diffusion generation, regional conditioning or model inference is implemented.** The HTML in docs remains the design reference; live Forge installation/display is deliberately deferred to P07. See [P02 editor details](docs/P02_EDITOR.md), [PHASES.md](PHASES.md) and [to-do.md](to-do.md). See [PHASES.md](PHASES.md) and [to-do.md](to-do.md).
+**P03 implementation branch:** the full-scene browser regional editor and CRF v1 JSON/ZIP workflow are implemented for offline verification. **P03 adds an offline-invokable, CPU-resident SDXL synchronous Euler sampler and guarded Forge model bridge; it is not enabled in the Forge UI and has not undergone live SDXL inference.** The HTML in docs remains the design reference; live Forge installation/display is deliberately deferred to P07. See [P02 editor details](docs/P02_EDITOR.md), [PHASES.md](PHASES.md) and [to-do.md](to-do.md). See [PHASES.md](PHASES.md) and [to-do.md](to-do.md).
 
 ## Install P02 editor + P01 diagnostic panel
 
