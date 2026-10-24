@@ -59,4 +59,5 @@ The `Influence` view samples a **planned, UI-only** mask mix at 128×96 position
 ## Latest isolated acceptance evidence
 
 - [GitHub Actions 40135683112](https://github.com/Neb963/forge-coherent-diffusion/actions/runs/40135683112), commit `d13cd05f`: Python 3.11 **30 tests PASS**; browser editor regression **PASS**; actual Gradio 4.40 top-level tab interaction **PASS**. The isolated Gradio smoke pins compatible FastAPI/Starlette to avoid an unrelated Gradio 4 runtime mismatch.
-- The installed user's Forge Neo, its actual Gradio/FastAPI patchset, GPU, model loader and browser policies were not accessible; the required *live Forge* display acceptance remains **NOT TESTED**, and PR #2 stays draft.
+- **P02 final offline acceptance:** [GitHub Actions 40137761285](https://github.com/Neb963/forge-coherent-diffusion/actions/runs/40137761285), commit `2416d9d`: Python CPU unit tests **PASS** (30), original Chromium editor interaction suite **PASS**, new numerical influence suite **PASS**, isolated Gradio 4 iframe interaction **PASS**. PR #2 was merged earlier; PR #3 closes its outstanding numerical acceptance.
+- The user's installed Forge Neo, Gradio/FastAPI patchset, GPU, model loader and browser policies were not accessible. *Live Forge* display and output remain **NOT TESTED** until P07.
