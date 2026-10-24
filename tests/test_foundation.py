@@ -183,6 +183,7 @@ class EvidenceTests(unittest.TestCase):
         gr.Checkbox=lambda **k:True
         gr.Button=lambda *a,**k:Button()
         gr.JSON=lambda **k:None
+        gr.HTML=lambda **k:None
         mod=types.ModuleType("modules")
         scr=types.ModuleType("modules.scripts")
         scr.Script=type("Script",(object,),{})
