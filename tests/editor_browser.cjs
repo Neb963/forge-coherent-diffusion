@@ -131,7 +131,7 @@ const { spawnSync } = require('node:child_process');
   for(const item of fixtures.valid){
     await page.locator('#importTextarea').fill(JSON.stringify(item.document));
     await page.locator('#validateBtn').click();
-    assert.equal(await page.locator('#applyImportBtn').isDisabled(),false,'valid fixture rejected: '+item.name);
+    assert.equal(await page.locator('#applyImportBtn').isDisabled(),Boolean(item.document.assets?.length),'valid fixture/paste safety disagreement: '+item.name);
   }
   for(const item of fixtures.invalid){
     await page.locator('#importTextarea').fill(JSON.stringify(item.document));
