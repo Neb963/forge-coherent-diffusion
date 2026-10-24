@@ -110,6 +110,19 @@ class SynchronizedSDXLTests(unittest.TestCase):
             self.assertTrue(torch.equal(observed, before[:, :, r.y0:r.y1, r.x0:r.x1]))
         self.assertTrue(torch.equal(before, self.x))
 
+    def test_overlap_taper_yields_bounded_finite_blend(self):
+        # Different tile values intentionally exercise overlap interpolation;
+        # this is a numerical seam check, NOT an image-quality benchmark.
+        result = self.run(self.plan, self.x, [1.,0.],
+                          lambda crop, s, t: torch.ones_like(crop) * (t.index + 1))
+        self.assertTrue(bool(torch.isfinite(result.latent).all()))
+        self.assertGreaterEqual(float(result.latent.min()), 1.0 - 1e-6)
+        self.assertLessEqual(float(result.latent.max()),
+                             float(len(self.plan.windows)) + 1e-6)
+        self.assertTrue(bool((result.latent[0,0, :,1:] -
+                              result.latent[0,0, :,:-1]).abs().max() <=
+                             len(self.plan.windows) - 1))
+
     def test_halo_is_context_only(self):
         p = self.plan
         def denoiser(crop, sigma, tile):
@@ -243,6 +256,20 @@ class ForgeSDXLBridgeTests(unittest.TestCase):
         self.assertEqual(tuple(out.shape),(1,4,4,4))
         self.assertTrue(torch.all(out > 8))
         self.assertEqual(self.calls[-1], ("decode", {"tile_x":16,"tile_y":16,"overlap":4}))
+
+    def test_prefers_loaded_model_precision(self):
+        self.host.forge_objects.unet.model.computation_dtype = torch.bfloat16
+        adapter=self.ForgeSDXL.from_prompts(self.host,self.plan,prompt="a",
+                                            negative_prompt="",cfg=2.,seed=42,device="cpu")
+        mod=sys.modules["backend.sampling.sampling_function"]
+        original=mod.sampling_function_inner
+        seen=[]
+        def inspect_dtype(model,crop,*args):
+            seen.append(crop.dtype)
+            return original(model,crop,*args)
+        mod.sampling_function_inner=inspect_dtype
+        adapter.run([1.,0.])
+        self.assertEqual(seen,[torch.bfloat16])
 
     def test_host_denies_unsupported_configurations(self):
         cases=[
