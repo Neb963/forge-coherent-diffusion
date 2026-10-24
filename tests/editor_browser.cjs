@@ -6,6 +6,18 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawnSync } = require('node:child_process');
 
+function readDownloadedScene(downloadPath){
+ const data=fs.readFileSync(downloadPath);
+ if(data[0]===0x50 && data[1]===0x4b){
+  const out=spawnSync('python',['-c',
+   'import json,sys,zipfile; print(zipfile.ZipFile(sys.argv[1]).read("composition.json").decode("utf-8"))',
+   downloadPath],{encoding:'utf8'});
+  assert.equal(out.status,0,out.stderr);
+  return JSON.parse(out.stdout);
+ }
+ return JSON.parse(data.toString('utf8'));
+}
+
 (async () => {
   const root=fs.readFileSync(path.resolve('coherent_diffusion/editor/index.html'));
   const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(root)});
@@ -184,7 +196,7 @@ const { spawnSync } = require('node:child_process');
   const rectChange=page.waitForEvent('download');
   await page.locator('#exportBtn').click();
   const geomDownload=await rectChange;
-  const changed=JSON.parse(fs.readFileSync(await geomDownload.path(),'utf8'));
+  const changed=readDownloadedScene(await geomDownload.path());
   assert.ok(Math.abs(changed.regions.at(-1).geometry.bbox[0]-.25)<.001,'numeric edit changes exported canonical coordinates');
   assert.deepEqual(changed.regions.slice(0,6).map(r=>({id:r.id,geometry:r.geometry})),
     exported.regions.map(r=>({id:r.id,geometry:r.geometry})),'new shapes did not mutate existing siblings');
@@ -202,7 +214,7 @@ const { spawnSync } = require('node:child_process');
   assert.equal(await page.locator('#layerList .layer').count(),beforeDraw+2+6,'merge keeps both compositions');
   const mergedDownload=page.waitForEvent('download');
   await page.locator('#exportBtn').click();
-  const merged=JSON.parse(fs.readFileSync(await (await mergedDownload).path(),'utf8'));
+  const merged=readDownloadedScene(await (await mergedDownload).path());
   assert.equal(new Set(merged.regions.map(r=>r.id)).size,merged.regions.length,'merge resolved region ID collisions');
   assert.deepEqual(merged.global,changed.global,'merge did not overwrite global prompts');
   assert.equal(merged.canvas.width,4096,'merge preserved host canvas width');
