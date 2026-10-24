@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: python -m pip install -r requirements.txt "gradio==4.40.0" "huggingface_hub==0.36.2"
+      - run: python -m pip install -r requirements.txt "gradio==4.40.0" "huggingface_hub==0.36.2" "fastapi==0.112.2" "starlette==0.38.6"
       - run: npm install --no-save playwright@1.56.1
       - run: npx playwright install --with-deps chromium
       - name: Editor Chromium interaction / CRF archive round-trip
