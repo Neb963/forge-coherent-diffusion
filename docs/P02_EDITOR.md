@@ -31,7 +31,7 @@ CI runs the Python and Chromium checks in separate jobs. The browser test loads 
 ## Optional local Forge smoke (not proved by GitHub Actions)
 
 1. Install the repository under `Forge Neo/extensions/coherent-diffusion/` and restart Forge.
-2. In txt2img expand **Coherent Diffusion — regional composition editor (P02)**. Verify the complete responsive embedded panel appears (rather than an empty iframe or a security-policy error); confirm existing P01 diagnostics remain available.
+2. Open the **Coherent Diffusion** top-level tab and verify its responsive full-width editor appears (rather than an empty iframe or a security-policy error); then verify P01 diagnostics in txt2img remain available.
 3. Edit one of five overlapping shapes, brush and erase without hiding sibling regions; edit prompt/LoRA reference. Export JSON/ZIP. Refresh; verify draft reload. Import your file using Validate & preview and Apply; check geometry and text.
 4. Record installed Forge/Gradio versions, browser, any traceback or CSP errors, and whether all controls respond. This smoke is **NOT TESTED** without the user's Forge host. Do not infer it from mocked Gradio or standalone Chromium.
 5. Do not run image generation through this extension: P03/P05/P06 implement samplers/conditioning. The Generate action only explains its unavailable status.
