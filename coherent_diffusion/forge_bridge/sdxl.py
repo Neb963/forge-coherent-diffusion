@@ -122,20 +122,58 @@ class ForgeSDXL:
             sampling_cleanup(self.host.forge_objects.unet)
 
     def run(self, sigmas, *, max_cpu_bytes=4 * 1024**3, max_window_bytes=512 * 1024**2,
-            cancelled=None, progress=None, inference_dtype=None):
+            cancelled=None, progress=None, inference_dtype=None,
+            min_tile_px=256, max_retiles=2):
+        """Bounded OOM recovery replays the ENTIRE run with the same global seed.
+
+        Tile shrink never resumes mid-step or keeps partial solver history. Only
+        MemoryError/CUDA OOM retries; all other errors fail without rerouting.
+        Caller can inspect result.plan to see actual geometry. Does not claim
+        any measured device VRAM requirement.
+        """
         import torch
-        self.prepare()
-        try:
-            first = float(sigmas[0])  # no zero/noise reuse from independent crops
-            initial = seeded_noise(self.plan, self.seed, sigma=first)
-        except BaseException:
-            self.cleanup()
-            raise
-        return synchronized_euler(
-            self.plan, initial, sigmas, self.predict, device=self.device,
-            inference_dtype=inference_dtype or torch.float32,
-            cancelled=cancelled, progress=progress, cleanup=self.cleanup,
-            max_cpu_bytes=max_cpu_bytes, max_window_bytes=max_window_bytes)
+        from coherent_diffusion.scheduler.sdxl_sync import _validate_schedule
+        schedule = _validate_schedule(sigmas)
+        if (type(min_tile_px) is not int or type(max_retiles) is not int
+                or min_tile_px < self.plan.scale or min_tile_px % self.plan.scale
+                or max_retiles < 0 or max_retiles > 4):
+            raise ValueError("Invalid bounded retry settings")
+        if type(max_cpu_bytes) is not int or type(max_window_bytes) is not int:
+            raise ValueError("Integer memory budgets required")
+        for attempt in range(max_retiles + 1):
+            p = self.plan
+            # Check global residency budget BEFORE allocating noise or loading the model.
+            master_bytes = p.width * p.height * 4 * 4  # batch=1, channels=4, fp32
+            if 4 * master_bytes + p.width * p.height * 4 > max_cpu_bytes:
+                raise MemoryError("CPU global field exceeds configured residency budget")
+            max_crop_bytes = max(4 * t.read.width * t.read.height * 4 for t in p.windows)
+            try:
+                if max_crop_bytes > max_window_bytes:
+                    raise MemoryError("Inference window exceeds configured tile budget")
+                if cancelled is not None and cancelled():
+                    raise InterruptedError("Coherent tiled run interrupted")
+                self.prepare()
+                try:
+                    initial = seeded_noise(p, self.seed, sigma=schedule[0])
+                except BaseException:
+                    self.cleanup()
+                    raise
+                return synchronized_euler(
+                    p, initial, schedule, self.predict, device=self.device,
+                    inference_dtype=inference_dtype or torch.float32,
+                    cancelled=cancelled, progress=progress, cleanup=self.cleanup,
+                    max_cpu_bytes=max_cpu_bytes, max_window_bytes=max_window_bytes)
+            except (MemoryError, torch.cuda.OutOfMemoryError) as error:
+                self.cleanup()
+                next_tile = max(min_tile_px, (p.tile_px // (2 * p.scale)) * p.scale)
+                if attempt >= max_retiles or next_tile >= p.tile_px:
+                    raise MemoryError(
+                        "SDXL tiled P03 exhausted bounded memory retries; "
+                        "reduce tile size/resolution or release GPU memory") from error
+                next_overlap = min(p.overlap_px, (next_tile // (4 * p.scale)) * p.scale)
+                next_halo = min(p.halo_px, (next_tile // (4 * p.scale)) * p.scale)
+                self.plan = TilePlan.build(p.width_px, p.height_px, next_tile,
+                                           next_overlap, next_halo, scale=p.scale)
 
     def decode_tiled(self, latent, *, tile_latent=64, overlap_latent=16):
         """Preserve model's own latent scaling and Forge tiled VAE; return NHWC."""
