@@ -46,6 +46,16 @@ CI runs the Python and Chromium checks in separate jobs. The browser test loads 
 - Large-canvas/large-number-of-masks responsiveness and local quota on the user's browser remain to be measured. P02 cannot make a tested VRAM claim.
 - Full regional attention, LoRA activation/isolation, model/Q4 encode, ControlNet, actual output, OOM cleanup and low-VRAM GPU acceptance are later phases.
 
+## Numerical influence-preview contract (P02 only)
+
+The `Influence` view samples a **planned, UI-only** mask mix at 128×96 positions; it is not attention attribution or denoiser/LoRA output. Hover the canvas to inspect the normalized point and each contributing region's percentage in the footer (hover the readout for all contributors). UI overlay visibility and display opacity do **not** modify planned generation coefficients; `enabled` and `blend.weight=0` exclude them.
+
+- **Weighted:** sample editable shapes and masks' estimated feathered coverage in [0,1], multiply by nonnegative weights, include `global.base_weight`, then normalize. A base-only sample reads 100% base.
+- **Priority:** sort by descending `z_index`, with later CRF document order winning ties; multiply each layer's raw coverage by the fraction not occluded by higher masks, then normalize against base. Feathering leaves partially exposed lower layers.
+- Approximation limits: polygon boundaries use point-in-polygon and edge-distance feather; PNG luma/alpha is downsampled to 128×96; still-loading PNGs are indicated as pending, not counted as uncovered. Backend-accurate masks and conditioning remain P06.
+- The preview warns about missing coverage, base coefficients below 5%, and differing overlapping LoRA intent references. Requested prediction-isolation is advisory **only**; no LoRA adapter is activated or isolated in P02.
+- `tests/influence_browser.cjs` numerically checks weighted/priority shares, fractional feather, stable ties, hover, visibility, enabled/zero weight, coverage, adapter warnings, and asynchronous PNG previews. CI runs this separately from the full editor workflow.
+
 ## Latest isolated acceptance evidence
 
 - [GitHub Actions 40135683112](https://github.com/Neb963/forge-coherent-diffusion/actions/runs/40135683112), commit `d13cd05f`: Python 3.11 **30 tests PASS**; browser editor regression **PASS**; actual Gradio 4.40 top-level tab interaction **PASS**. The isolated Gradio smoke pins compatible FastAPI/Starlette to avoid an unrelated Gradio 4 runtime mismatch.
