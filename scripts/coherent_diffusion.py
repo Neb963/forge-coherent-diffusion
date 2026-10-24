@@ -30,7 +30,7 @@ class Script(scripts.Script):
 
     def ui(self, is_img2img):
         with gr.Accordion("Coherent Diffusion — diagnostics only", open=False):
-            gr.Markdown("P01 foundation: **generation and regional editor are not installed yet**. Inspect the already-loaded model without changing Forge's pipeline. Q4 and positional support require later live proof.")
+            gr.Markdown("P01 diagnostics remain read-only; **P02 editor is available below, while generation is not implemented**. Inspect the already-loaded model without changing Forge's pipeline. Q4 and positional support require later live proof.")
             enabled = gr.Checkbox(label="Capture read-only metadata during txt2img", value=False)
             inspect_button = gr.Button("Inspect loaded model")
             result = gr.JSON(label="Capability / encoder evidence", value={})
