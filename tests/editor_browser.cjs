@@ -3,15 +3,19 @@ const { chromium } = require('playwright');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
+const http = require('node:http');
 const { spawnSync } = require('node:child_process');
 
 (async () => {
+  const root=fs.readFileSync(path.resolve('coherent_diffusion/editor/index.html'));
+  const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(root)});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const url='http://127.0.0.1:'+server.address().port+'/editor';
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1500, height: 1050 }, acceptDownloads: true });
   const errors = [];
   page.on('pageerror', err => errors.push(err.message));
-  await page.goto(pathToFileURL(path.resolve('coherent_diffusion/editor/index.html')).href);
+  await page.goto(url);
   await page.waitForSelector('#layerList .layer');
   assert.equal(await page.locator('#layerList .layer').count(), 5, 'initial overlapping 5 regions');
   for(const region of ['sky','sun','ocean','beach','clouds']){
@@ -77,6 +81,6 @@ const { spawnSync } = require('node:child_process');
   await page.locator('#applyImportBtn').click();
   assert.equal(await page.locator('#layerList .layer').count(),7,'masked CRF round-trip');
   assert.deepEqual(errors,[],'no uncaught browser script errors');
-  await browser.close();
+  await browser.close();await new Promise(resolve=>server.close(resolve));
   console.log('P02 browser editor: PASS (5 regions, edit, export, Python conformance, reload, bad import, brush ZIP)');
 })().catch(e=>{console.error(e);process.exit(1)});
