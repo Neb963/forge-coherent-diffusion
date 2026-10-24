@@ -1,0 +1,115 @@
+{
+  "format": "coherent-regions",
+  "version": 1,
+  "canvas": {
+    "width": 1024,
+    "height": 768,
+    "coordinate_system": "normalized_top_left",
+    "aspect_policy": "preserve_relative"
+  },
+  "global": {
+    "scene_prompt": "A wide coastal landscape with exactly one sun above the horizon",
+    "style_prompt": "Natural landscape photography, continuous daylight, realistic optics",
+    "negative_prompt": "bad perspective",
+    "base_weight": 0.25
+  },
+  "blend": {
+    "policy": "weighted"
+  },
+  "regions": [
+    {
+      "id": "sky",
+      "name": "Sky",
+      "geometry": {
+        "type": "bbox",
+        "bbox": [
+          0,
+          0,
+          1,
+          0.5
+        ]
+      },
+      "prompt": "Sky with delicate high clouds",
+      "negative_prompt": "",
+      "inherit_style": true,
+      "enabled": true,
+      "visible": true,
+      "blend": {
+        "weight": 1,
+        "feather_px": 16,
+        "z_index": 10
+      },
+      "loras": []
+    },
+    {
+      "id": "ocean",
+      "name": "Ocean",
+      "geometry": {
+        "type": "polygon",
+        "points": [
+          [
+            0,
+            0.48
+          ],
+          [
+            1,
+            0.48
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ]
+      },
+      "prompt": "Open sea with delicate waves and a straight continuous horizon",
+      "negative_prompt": "",
+      "inherit_style": true,
+      "enabled": true,
+      "visible": true,
+      "blend": {
+        "weight": 1,
+        "feather_px": 16,
+        "z_index": 11
+      },
+      "loras": []
+    },
+    {
+      "id": "sun",
+      "name": "sun",
+      "geometry": {
+        "type": "bbox",
+        "bbox": [
+          0.6,
+          0.1,
+          0.2,
+          0.2
+        ]
+      },
+      "prompt": "One small bright sun with subtle localized atmospheric glow",
+      "negative_prompt": "duplicate suns",
+      "inherit_style": true,
+      "enabled": true,
+      "visible": true,
+      "blend": {
+        "weight": 1,
+        "feather_px": 16,
+        "z_index": 20
+      },
+      "loras": []
+    }
+  ],
+  "entities": [
+    {
+      "id": "single-sun",
+      "description": "The only sun in the scene",
+      "count": 1,
+      "region_ids": [
+        "sun"
+      ]
+    }
+  ]
+}

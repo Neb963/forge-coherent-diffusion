@@ -1,0 +1,20 @@
+name: Offline foundation tests
+on:
+  push:
+    branches: [main, "phase/**"]
+  pull_request:
+    branches: [main]
+jobs:
+  cpu-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal validator dependency
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python packages and Forge entrypoint
+        run: python -m compileall -q coherent_diffusion scripts tests
+      - name: Validate schema, CRF, CPU reference and probes
+        run: python -m unittest discover -s tests -v

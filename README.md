@@ -1,19 +1,39 @@
 # Coherent Diffusion — Forge Neo
 
-Native high-resolution, compositionally coherent txt2img for **SDXL and Anima** on limited VRAM, with a multilayer regional editor, CRF prompt interchange, and optional regional LoRAs.
+Native high-resolution coherent txt2img for **SDXL and Anima**, with a multilayer region editor and CRF prompt interchange.
 
-**Status:** planning/bootstrap only. No working generation extension has been implemented yet.
+**P01 status:** read-only diagnostics and offline foundations. **This does not yet generate images**, route prompts or implement the editor. The HTML in docs is a design reference only. See [PHASES.md](PHASES.md) and [to-do.md](to-do.md).
 
-## Read first
+## Install P01 diagnostic panel
 
-1. [AGENTS.md](AGENTS.md) — small coding-agent protocol.
-2. [PHASES.md](PHASES.md) and [to-do.md](to-do.md) — phase roadmap and current work.
-3. [docs/DESIGN.md](docs/DESIGN.md) — authoritative technical/product specification.
-4. [docs/UI_PROTOTYPE.html](docs/UI_PROTOTYPE.html) — high-fidelity *design reference*, not a backend.
-5. [docs/research/](docs/research/) — background reports; resolve discrepancies using DESIGN.md and upstream verification.
+Place this repository folder at `Forge Neo/extensions/coherent-diffusion/` and restart Forge Neo. In txt2img expand **Coherent Diffusion — diagnostics only**. Clicking **Inspect loaded model** reports non-sensitive capability/encoder metadata about an already-loaded model. Optional process capture does not change the sampler.
 
-Each chat implements **one eligible phase**; the agent first writes the phase plan in `to-do.md`, then codes, tests, updates progress, and stops. The final phase ships a complete installable Forge Neo extension ZIP and a short local test guide.
+The P01 CRF validator uses Python `jsonschema==4.25.1`; install `python -m pip install -r requirements.txt` to validate CRF outside Forge. The diagnostic panel itself has no additional runtime dependency beyond Forge's Gradio/Python stack.
 
-### Typical agent prompt
+For source-level API notes, installation diagnostics and Q4 GGUF limitations see [docs/P01_RUNTIME_PROBES.md](docs/P01_RUNTIME_PROBES.md). **A real Forge smoke test has not been executed by CI.** Nothing in P01 replaces the installed Anima text-encoder loader.
 
-> Implement the next eligible phase in https://github.com/Neb963/forge-coherent-diffusion. Read AGENTS.md, PHASES.md, to-do.md and the specs. Plan that phase in to-do.md first, then implement and test it fully. Complete exactly one phase, update to-do.md, publish the changes, and stop.
+## Offline checks
+
+```bash
+python -m pip install -r requirements.txt
+python -m compileall -q coherent_diffusion scripts tests
+python -m unittest discover -s tests -v
+```
+
+The CRF Draft 2020-12 schema is at `coherent_diffusion/crf/schema_v1.json`. A complete pastable sample is at `examples/one_sun.crf.json`, with 11 valid and 28 invalid conformance documents at `tests/fixtures/crf_conformance.json`.
+
+Python API example:
+
+```python
+from pathlib import Path
+from coherent_diffusion.crf import parse_validate, canonical_json
+report = parse_validate(Path("examples/one_sun.crf.json").read_text())
+print(report.warnings)
+print(canonical_json(report.document))
+```
+
+CPU tile reference and invariant checks are **not** a diffusion backend, and the benchmark metadata recorder never fabricates performance results. P03/P05/P06 are responsible for the model-specific generation and conditioning.
+
+## Agent workflow
+
+Follow [AGENTS.md](AGENTS.md), [PHASES.md](PHASES.md) and [docs/DESIGN.md](docs/DESIGN.md). Exactly one phase per chat; first plan in `to-do.md`, then implement, verify, publish and stop.
