@@ -424,7 +424,46 @@ function importScene(obj,mode='replace',maskData={}){
 function openModal(title,body,actions,note='P02 editor only · generation backend unavailable'){ $('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modalActions').innerHTML=actions;$('modalFooterNote').textContent=note;$('modalScreen').classList.add('open')}
 function closeModal(){$('modalScreen').classList.remove('open');previewImport=null}
 function exampleCRF(){return JSON.stringify(exportDocument(),null,2)}
-function openImport(){previewImport=null;openModal('Import regional composition',`<p class="modal-sub">Paste <b>CRF v1 JSON</b> from an LLM or another workflow. Validate geometry and IDs before applying; your current composition remains unchanged until you confirm.</p><textarea id="importTextarea" spellcheck="false" placeholder="Paste CRF JSON or a fenced JSON block here"></textarea><div class="modal-row"><label for="importMode">Import action</label><select id="importMode"><option value="replace">Replace current composition</option><option value="merge">Merge regions (preserve current)</option></select><button class="btn sm" id="insertExampleBtn">Insert example</button></div><div id="importResult" style="display:none"></div>`,`<button class="btn" id="cancelModalBtn">Cancel</button><button class="btn" id="validateBtn">Validate & preview</button><button class="btn primary" disabled id="applyImportBtn">Apply composition</button>`,'No external URLs, scripts, or model files are fetched.');$('cancelModalBtn').onclick=closeModal;$('insertExampleBtn').onclick=()=>$('importTextarea').value=exampleCRF();$('importMode').onchange=e=>importMode=e.target.value;$('validateBtn').onclick=()=>{const target=$('importResult');try{const obj=validateCRF($('importTextarea').value);previewImport=obj;const ratio=Math.abs(obj.canvas.width/obj.canvas.height-scene.canvas.width/scene.canvas.height)>.0005;target.style.display='block';target.className='result';target.innerHTML=`${icon('check','small')} Valid CRF v1 · ${obj.regions.length} regions · ${obj.canvas.width} × ${obj.canvas.height}${ratio?'<div style="margin-top:8px;color:#f5d1a3">Aspect ratio differs from the current canvas. Replace adopts the imported ratio; merge retains current normalized coordinates.</div>':''}<div style="margin-top:7px">${esc(obj.regions.map(r=>r.name||r.id).join(' · '))}</div>${previewCRF(obj)}`;$('applyImportBtn').disabled=false}catch(e){previewImport=null;target.style.display='block';target.className='result error';target.textContent='Validation failed: '+e.message;$('applyImportBtn').disabled=true}};$('applyImportBtn').onclick=()=>{if(!previewImport)return;importScene(previewImport,$('importMode').value);closeModal();toast('Composition imported','',`${scene.regions.length} editable regions`)};}
+function openImport(){
+ previewImport=null;
+ openModal('Import CRF v1',`<p class="modal-sub">Paste JSON, or choose a local .crf.json / .crf.zip. Masks require ZIP; apply only after validation.</p><textarea id="importTextarea" spellcheck="false" placeholder="Paste strict CRF JSON"></textarea><div class="modal-row"><label>Import file</label><input type="file" id="importFile" accept=".json,.zip,.crf.json,.crf.zip"></div><div class="modal-row"><label>Action</label><select id="importMode"><option value="replace">Replace scene</option><option value="merge">Merge regions (keep current global prompts)</option></select></div><div class="modal-row"><label>Aspect mismatch</label><select id="aspectImport"><option value="preserve_relative">Keep normalized coordinates</option><option value="fit_letterbox">Fit geometry (vectors only)</option></select><button class="btn sm" id="insertExampleBtn">Current scene</button></div><div id="importResult" role="status" aria-live="polite" style="display:none"></div>`,`<button class="btn" id="cancelModalBtn">Cancel</button><button class="btn" id="validateBtn">Validate & preview</button><button class="btn primary" id="applyImportBtn" disabled>Apply</button>`,'Local import; no network or model execution.');
+ const upload=$('importFile'),input=$('importTextarea'),message=$('importResult'),apply=$('applyImportBtn');let masks={};
+ $('cancelModalBtn').onclick=closeModal;
+ $('insertExampleBtn').onclick=()=>{input.value=JSON.stringify(exportDocument(),null,2);upload.value='';apply.disabled=true};
+ input.oninput=()=>{upload.value='';apply.disabled=true;previewImport=null};
+ upload.onchange=()=>{apply.disabled=true;previewImport=null};
+ $('validateBtn').onclick=async()=>{
+  apply.disabled=true;previewImport=null;masks={};
+  try{
+   let doc,verified=false;
+   if(upload.files?.length){
+    const file=upload.files[0];if(file.size>24*1024*1024)throw Error('File exceeds 24 MiB');
+    if(/\.zip$/i.test(file.name)){const parsed=await parseArchive(new Uint8Array(await file.arrayBuffer()));doc=parsed.doc;masks=parsed.maskData;verified=true}
+    else doc=validateCRF(await file.text());
+   }else doc=validateCRF(input.value);
+   if(doc.assets?.length&&!verified)throw Error('Binary masks require a verified .crf.zip');
+   const aspectMismatch=Math.abs(doc.canvas.width/doc.canvas.height-scene.canvas.width/scene.canvas.height)>1e-9;
+   if($('importMode').value==='merge'&&aspectMismatch&&$('aspectImport').value==='fit_letterbox'){
+    if(doc.regions.some(r=>r.geometry.type==='mask'))throw Error('Letterbox transform of bitmap masks unsupported; choose preserve-relative');
+    const out=cp(doc),s=Math.min(scene.canvas.width/doc.canvas.width,scene.canvas.height/doc.canvas.height);
+    const sx=doc.canvas.width*s/scene.canvas.width,sy=doc.canvas.height*s/scene.canvas.height,dx=(1-sx)/2,dy=(1-sy)/2;
+    for(const r of out.regions){
+     if(r.geometry.type==='bbox'){const b=r.geometry.bbox;r.geometry.bbox=[dx+b[0]*sx,dy+b[1]*sy,b[2]*sx,b[3]*sy]}
+     if(r.geometry.type==='polygon')r.geometry.points=r.geometry.points.map(pt=>[dx+pt[0]*sx,dy+pt[1]*sy]);
+    }
+    out.canvas=cp(scene.canvas);out.canvas.aspect_policy='fit_letterbox';doc=validateCRF(out);
+   }
+   previewImport=doc;message.style.display='block';message.className='result';
+   message.innerHTML=icon('check','small')+` Validated ${doc.regions.length} regions · ${Object.keys(masks).length} masks`+(aspectMismatch?'<p>Aspect differs: replace adopts incoming canvas; merge uses your selected policy.</p>':'')+previewCRF(doc);
+   apply.disabled=false;
+  }catch(e){message.style.display='block';message.className='result error';message.textContent='Validation failed: '+e.message;apply.disabled=true}
+ };
+ apply.onclick=()=>{
+  if(!previewImport)return;
+  try{importScene(previewImport,$('importMode').value,cp(masks));closeModal();toast('CRF composition applied')}
+  catch(e){message.className='result error';message.textContent='Import blocked: '+e.message}
+ };
+}
 function openAdvanced(){openModal('Generation settings · prototype',`<p class="modal-sub">These controls illustrate the planned generation interface. They are not connected to Forge Neo in this HTML prototype.</p><div class="statlist"><div class="field-wrap"><label>Sampling steps</label><input type="number" value="30" min="1" max="150"></div><div class="field-wrap"><label>CFG guidance</label><input type="number" value="4.5" min="0" max="30" step=".5"></div><div class="field-wrap"><label>Tile overlap</label><select><option>Auto · adaptive</option><option>64 px</option><option>128 px</option><option>192 px</option></select></div><div class="field-wrap"><label>Memory policy</label><select><option>Auto (sequential tiles)</option><option>Conservative · 4 GB target</option><option>Performance</option></select></div></div><div class="section-info" style="margin-top:16px">The real extension will perform capability checks for SDXL/Anima, sampler compatibility, text encoder availability and LoRA isolation before generation.</div>`,`<button class="btn primary" id="closeAdvanced">Close</button>`);$('closeAdvanced').onclick=closeModal}
 function openGenerate(){openModal('Generation not connected',`<div class="inspector-top" style="margin-bottom:16px"><div class="symbol">${icon('spark')}</div><div><div class="title">Coherent ${settings.strategy==='progressive'?'Progressive':'Direct Tiled'}</div><div class="subtitle">${settings.model==='sdxl'?'SDXL':'Anima'} · ${scene.canvas.width} × ${scene.canvas.height} · ${scene.regions.filter(r=>r.enabled).length} enabled regions</div></div></div><p class="modal-sub">The composition editor runs locally. Forge Neo sampling is not connected in P02. Generation is unavailable until the later backend integration phases.</p><div class="section-info">Editor capabilities: region drawing and transforms, layers, masks, prompt and LoRA references, visualization, JSON import/export, and browser-local draft recovery.</div>`,`<button class="btn primary" id="genModalClose">Continue editing</button>`);$('genModalClose').onclick=closeModal}
 // UI events
