@@ -140,6 +140,10 @@ class ForgeSDXL:
             raise ValueError("Invalid bounded retry settings")
         if type(max_cpu_bytes) is not int or type(max_window_bytes) is not int:
             raise ValueError("Integer memory budgets required")
+        if inference_dtype is None:
+            # Forge records the model's actual inference precision here.
+            inference_dtype = getattr(self.host.forge_objects.unet.model,
+                                      "computation_dtype", torch.float32)
         for attempt in range(max_retiles + 1):
             p = self.plan
             # Check global residency budget BEFORE allocating noise or loading the model.
@@ -160,7 +164,7 @@ class ForgeSDXL:
                     raise
                 return synchronized_euler(
                     p, initial, schedule, self.predict, device=self.device,
-                    inference_dtype=inference_dtype or torch.float32,
+                    inference_dtype=inference_dtype,
                     cancelled=cancelled, progress=progress, cleanup=self.cleanup,
                     max_cpu_bytes=max_cpu_bytes, max_window_bytes=max_window_bytes)
             except (MemoryError, torch.cuda.OutOfMemoryError) as error:
