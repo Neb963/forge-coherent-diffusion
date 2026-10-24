@@ -95,7 +95,13 @@ class ForgeSDXL:
         # Host source inspects shape to reserve activation memory; does not
         # imply a full-image GPU allocation. Allocate on CPU only.
         sample = torch.empty((1, 4, largest.read.height, largest.read.width), device="meta")
-        sampling_prepare(unet, sample)
+        try:
+            sampling_prepare(unet, sample)
+        except BaseException:
+            # A host prepare may have partially loaded/registered resources.
+            from backend.sampling.sampling_function import sampling_cleanup
+            sampling_cleanup(unet)
+            raise
         self._prepared = True
 
     def predict(self, crop, sigma: float, tile):
@@ -119,8 +125,12 @@ class ForgeSDXL:
             cancelled=None, progress=None, inference_dtype=None):
         import torch
         self.prepare()
-        first = float(sigmas[0])  # no zero/noise reuse from independent crops
-        initial = seeded_noise(self.plan, self.seed, sigma=first)
+        try:
+            first = float(sigmas[0])  # no zero/noise reuse from independent crops
+            initial = seeded_noise(self.plan, self.seed, sigma=first)
+        except BaseException:
+            self.cleanup()
+            raise
         return synchronized_euler(
             self.plan, initial, sigmas, self.predict, device=self.device,
             inference_dtype=inference_dtype or torch.float32,
