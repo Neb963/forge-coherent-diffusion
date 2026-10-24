@@ -40,6 +40,12 @@ class CRFConformanceTests(unittest.TestCase):
                 with self.assertRaises(CRFError):
                     validate_crf(case["document"])
 
+    def test_example_sample(self):
+        sample = json.loads((HERE.parent/"examples/one_sun.crf.json").read_text())
+        self.assertEqual(validate_crf(sample).document, sample)
+        self.assertEqual(sample["entities"][0]["count"], 1)
+        self.assertEqual(sample["entities"][0]["region_ids"], ["sun"])
+
     def test_schema_meta_valid(self):
         from jsonschema import Draft202012Validator
         schema=json.loads((HERE.parent/"coherent_diffusion/crf/schema_v1.json").read_text())
@@ -95,6 +101,13 @@ class RasterTests(unittest.TestCase):
         self.assertEqual(rasterize({"type":"polygon","points":p},7,5),
                          rasterize({"type":"polygon","points":list(reversed(p))},7,5))
         self.assertEqual(sum(sum(row) for row in rasterize({"type":"polygon","points":p},7,5)),35)
+
+    def test_overlap_keeps_independent_masks(self):
+        a = rasterize({"type":"bbox","bbox":[0,0,.75,1]},4,2)
+        b = rasterize({"type":"bbox","bbox":[.25,0,.75,1]},4,2)
+        self.assertEqual(a[0], [1.,1.,1.,0.])
+        self.assertEqual(b[0], [0.,1.,1.,1.])
+        self.assertEqual(sum(1 for x,y in zip(a[0],b[0]) if x and y), 2)
 
     def test_reject_unsupported_binary(self):
         with self.assertRaises(CRFError):
