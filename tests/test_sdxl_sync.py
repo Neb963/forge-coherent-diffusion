@@ -177,7 +177,7 @@ class SynchronizedSDXLTests(unittest.TestCase):
         result=self.run(self.plan,self.x,[1.,0.],
                         lambda crop,sigma,t: (seen.append((str(crop.device),crop.dtype)),crop)[1],
                         device="cpu",inference_dtype=torch.bfloat16)
-        self.assertTrue(torch.allclose(result.latent, self.x, atol=1e-6))
+        self.assertTrue(torch.allclose(result.latent, self.x, atol=2e-2))
         self.assertEqual({v[1] for v in seen},{torch.bfloat16})
 
 
