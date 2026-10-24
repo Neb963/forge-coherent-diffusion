@@ -1,8 +1,8 @@
 # Coding agent instructions
 
-Read `PHASES.md`, `TODO.md`, `docs/DESIGN.md`, and the UI reference before coding. `PHASES.md` groups the detailed design into seven deliverable phases; `docs/DESIGN.md` governs functionality.
+Read `PHASES.md`, `to-do.md`, `docs/DESIGN.md`, and the UI reference before coding. `PHASES.md` groups the detailed design into seven deliverable phases; `docs/DESIGN.md` governs functionality.
 
-**Exactly one phase per chat.** Inspect the actual repository and current status. Resume an unfinished phase; otherwise select the first dependency-ready phase. **First write that phase's concrete, checkable plan in `TODO.md`**, informed by the code and specifications. Then implement it, test it, update `TODO.md`, commit/publish, and stop.
+**Exactly one phase per chat.** Inspect the actual repository and current status. Resume an unfinished phase; otherwise select the first dependency-ready phase. **First write that phase's concrete, checkable plan in `to-do.md`**, informed by the code and specifications. Then implement it, test it, update `to-do.md`, commit/publish, and stop.
 
 Keep things simple: straightforward Python/JS, no speculative frameworks, no elaborate governance, no unnecessary abstractions. Use a phase branch and PR where possible; squash-merge after relevant tests pass. If merge or live verification is blocked, preserve work on the branch and record the exact blocker. Do not claim untested features work.
 

@@ -3,7 +3,7 @@
 ## Goal and contracts
 Build a **real Forge Neo extension** for native high-resolution txt2img using SDXL and Anima on constrained VRAM, with synchronized tiled denoising, global compositional coherence, a high-fidelity multilayer region editor, versioned CRF paste/import/export, regional prompts and LoRAs, and optional Forge-native structural guidance. The [design](docs/DESIGN.md) is the full technical/product contract; the [HTML prototype](docs/UI_PROTOTYPE.html) is the visual/interaction reference, **not functioning generation code**.
 
-**One phase = one agent chat.** For each phase, the agent first drafts the detailed steps/checklist in `TODO.md` after reading the existing code, then implements, verifies and stops. Unfinished work stays in the same phase for the next chat. Do not skip acceptance items to move forward. Only promote a phase to DONE after its stated evidence exists; don't invent GPU test results.
+**One phase = one agent chat.** For each phase, the agent first drafts the detailed steps/checklist in `to-do.md` after reading the existing code, then implements, verifies and stops. Unfinished work stays in the same phase for the next chat. Do not skip acceptance items to move forward. Only promote a phase to DONE after its stated evidence exists; don't invent GPU test results.
 
 This is the **simplified implementation grouping** of design §13's F00–F08 roadmap, not a scope reduction. The agent may refine internal sequencing where necessary without dropping requirements.
 
@@ -65,7 +65,7 @@ This is the **simplified implementation grouping** of design §13's F00–F08 ro
 
 ## Simple workflow
 - `main` holds completed accepted phases; use `phase/P0X-short-name` branches and one small PR per phase.
-- Agent edits `TODO.md` to record detailed plan, status, tests and blockers. No external tracker required.
+- Agent edits `to-do.md` to record detailed plan, status, tests and blockers. No external tracker required.
 - CI: only quick Python/JS/schema/synthetic tests; **do not require online model weights/GPU** in GitHub Actions. Real-GPU/manual acceptance occurs when necessary and is recorded honestly.
 - Avoid unnecessary new tooling, heavyweight process docs and risky replacement of Forge internals. Don't copy third-party source without checking license requirements.
 - A future phase is NOT READY if a required predecessor has unresolved core gaps; resume the blocked predecessor instead.
