@@ -6,8 +6,8 @@ Read `PHASES.md` first. **Exactly one phase per chat.** Mark DONE with phase-app
 |---|---|---|
 | P01 — Foundation, probes, CRF, tests | **DONE (offline acceptance; live Forge deferred to P07)** | — |
 | P02 — Regional editor and CRF UI | **DONE — offline acceptance 2026-10-25; live Forge deferred to P07** | P01 |
-| P03 — SDXL synchronized tiled generation | IN PROGRESS (offline) | P01 |
-| P04 — SDXL global coherence | BLOCKED | P03 |
+| P03 — SDXL synchronized tiled generation | **DONE — offline acceptance 2026-10-25 (live P07)** | P01 |
+| P04 — SDXL global coherence | READY | P03 |
 | P05 — Anima + Q4 GGUF parity | BLOCKED | P01, P03, P04 findings |
 | P06 — Regional prompts, LoRAs, controls | BLOCKED | P02, P04, P05 |
 | P07 — Final package and simple manual guide | BLOCKED | P01–P06 |
@@ -107,7 +107,7 @@ Inspection of the live branch at `e090bc7`: the editor and ZIP/CRF path exist, b
 
 ## Active phase — P03: SDXL synchronized tiled sampler (2026-10-25)
 
-**Status:** IN PROGRESS (offline P03 only). Branch `phase/P03-sdxl-sync`. Baseline main `6adc1bdc7fd2a284fe12f738b03b258e849c5ed8` (P02 accepted and merged).
+**Status:** DONE — offline P03 acceptance (real Forge/SDXL/GPU deferred to P07). Branch `phase/P03-sdxl-sync`. Baseline main `6adc1bdc7fd2a284fe12f738b03b258e849c5ed8` (P02 accepted and merged).
 
 ### Repository/source inspection before implementation
 - Current production code contains only P01's scalar CPU `sync_reference.py`, CRF/region editor and read-only diagnostic Script. No torch tensor sampler, SDXL denoiser bridge, coherent generation invocation or full-canvas memory coordinator exists. The P02 editor deliberately does not call inference.
@@ -115,9 +115,18 @@ Inspection of the live branch at `e090bc7`: the editor and ZIP/CRF path exist, b
 - P03 will provide a bounded offline SDXL-compatible Euler (ODE) path with explicit sigma/model capability preflight. It will **not** imply arbitrary Forge sampler, SDXL accelerated/RF, Anima, P04 semantic coherence, P06 regional conditioning or real VRAM quality verification.
 
 ### Concrete implementation plan — recorded before code
-- [ ] Introduce real torch tensor tile geometry/planner in image and latent coordinates, overlapping positive write weights, optional clipped context halo, deterministic ordering and full coverage preflight; fail closed on misalignment, size/memory-limit or unsupported latent geometry.
-- [ ] Implement CPU-resident single seeded global Gaussian field and full-canvas synchronized `x0` accumulation: every tile predicts from a frozen full-state snapshot, transfer only its halo crop to the requested inference device, accumulate on CPU in float32, then perform **one** Euler update over the whole canvas per sigma interval; no per-tile noise/solver/step history. Validate tensor shape/finiteness and time/schedule semantics.
-- [ ] Build an explicit Forge Neo SDXL adapter with source-backed `sampling_function_inner`, conditioning contract, memory-management prepare/cleanup and host tiled VAE decode (through Forge's `vae.decode_tiled` and latent scaling). Fail on unsupported inpainting/RF/predictors/active ControlNet/regional state rather than silently discarding capabilities; never alter existing model/encoder or patch global Forge functions.
-- [ ] Ensure interruption, OOM, bad prediction and failures release per-window/device state and call adapter cleanup via `finally`; retain untouched input on failure and expose bounded step/window/CPU-residency telemetry with no fabricated memory numbers.
-- [ ] Add offline torch-backed synthetic fixtures for tile geometry and border coverage, halo correctness, frozen-state stability, order independence, reference untiled equality (local pointwise predictor), one solver update per step, multi-step global sigmas, seeded determinism, failure/interrupt and cleanup, fake Forge SDXL interface + decode contracts; add CPU tests to CI with pinned lightweight CPU torch install.
-- [ ] Document precise supported settings / deferred P04–P07 integration and run candidate-head CI (Python/torch and existing Chromium + isolated Gradio). Publish PR, merge only when all offline P03 acceptance evidence passes; update this tracker accurately. **Do not start P04.**
+- [x] Introduce real torch tensor tile geometry/planner in image and latent coordinates, overlapping positive write weights, optional clipped context halo, deterministic ordering and full coverage preflight; fail closed on misalignment, size/memory-limit or unsupported latent geometry.
+- [x] Implement CPU-resident single seeded global Gaussian field and full-canvas synchronized `x0` accumulation: every tile predicts from a frozen full-state snapshot, transfer only its halo crop to the requested inference device, accumulate on CPU in float32, then perform **one** Euler update over the whole canvas per sigma interval; no per-tile noise/solver/step history. Validate tensor shape/finiteness and time/schedule semantics.
+- [x] Build an explicit Forge Neo SDXL adapter with source-backed `sampling_function_inner`, conditioning contract, memory-management prepare/cleanup and host tiled VAE decode (through Forge's `vae.decode_tiled` and latent scaling). Fail on unsupported inpainting/RF/predictors/active ControlNet/regional state rather than silently discarding capabilities; never alter existing model/encoder or patch global Forge functions.
+- [x] Ensure interruption, OOM, bad prediction and failures release per-window/device state and call adapter cleanup via `finally`; retain untouched input on failure and expose bounded step/window/CPU-residency telemetry with no fabricated memory numbers.
+- [x] Add offline torch-backed synthetic fixtures for tile geometry and border coverage, halo correctness, frozen-state stability, order independence, reference untiled equality (local pointwise predictor), one solver update per step, multi-step global sigmas, seeded determinism, failure/interrupt and cleanup, fake Forge SDXL interface + decode contracts; add CPU tests to CI with pinned lightweight CPU torch install.
+- [x] Document precise supported settings / deferred P04–P07 integration and run candidate-head CI (Python/torch and existing Chromium + isolated Gradio). Publish PR, merge only when all offline P03 acceptance evidence passes; update this tracker accurately. **Do not start P04.**
+
+### P03 implementation, verification and publication (2026-10-25)
+
+- **Implementation:** `coherent_diffusion/scheduler/sdxl_sync.py` adds an image-pixel/latent-coordinate tile planner, clipped halo reads, positive cosine write taper, CPU float32 global field, single seeded full-image noise, deterministic canonical tile order, one global Euler ODE update per sigma interval and strict tensor/schedule/memory validation. `RunResult` reports effective tile geometry and *estimated* CPU and per-window bytes; these are not GPU/CPU measured peaks.
+- **SDXL host interface:** `coherent_diffusion/forge_bridge/sdxl.py` uses existing Forge SDXL encoder/`compile_conditions`, `sampling_function_inner`, `sampling_prepare/cleanup`, model precision and `vae.decode_tiled`, without global sampler patches, model replacement or Q4 encoder mutation. Unsupported Anima/refiner/flow/inpaint, custom hooks, controlnets and unknown VAE geometry fail closed.
+- **Recovery:** Interruption, bad tensors, nonfinite predictions, preparation failure and host-recognized OOM cause scoped cleanup. Limited retile retries replay from the same global seed and fresh solver state with smaller tiles; no partial step advancement. Incorrect unsupported schedules are rejected rather than substituted. No generation UI is activated in P03.
+- **Tests, exact code checkpoint:** [GitHub Actions run 40139751481](https://github.com/Neb963/forge-coherent-diffusion/actions/runs/40139751481) for `cdd98af40d273c37137a6aac504335d2283e6557` **SUCCESS**: 22 *executed* CPU PyTorch synthetic/Forge-stub SDXL tests PASS, existing Python CRF/probe archive suite PASS (30 substantive foundation/editor tests), Chromium editor + numerical-influence browser regressions PASS, isolated Gradio tab/iframe smoke PASS. The standard Python job skips torch tests on purpose; the dedicated pinned CPU-torch job executes them.
+- **Real evidence boundary:** Forge Neo installed environment, actual SDXL output, real sigma-profile compatibility, model loading, GPU peak VRAM, decoder behavior, low-VRAM device-specific fallback and visual seam/one-sun quality remain **NOT TESTED** and reserved for P07; P04 adds offline global coherence algorithms. No actual image-generation success is asserted.
+- **Documentation:** [docs/P03_SDXL_SAMPLER.md](docs/P03_SDXL_SAMPLER.md). **Publication:** [PR #4](https://github.com/Neb963/forge-coherent-diffusion/pull/4), branch `phase/P03-sdxl-sync`; accepted offline, squash merge after status/documentation-only head checks. **Next eligible phase: P04. Stop after P03.**
