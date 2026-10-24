@@ -187,6 +187,117 @@ function surfaceMove(e){const p=localPos(e);$('coordinateReadout').textContent=`
 function surfaceUp(){if(!interaction)return;const ix=interaction;interaction=null;if(ix.type==='box-drawing'){const [a,b]=[ix.start,ix.current];const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]),w=Math.abs(a[0]-b[0]),h=Math.abs(a[1]-b[1]);if(w>.012&&h>.012){newRegion({type:'bbox',bbox:[x,y,w,h]},'New rectangle');pushUndo(ix.before);setTool('select');render();toast('Rectangle added')}else renderOverlay();return}if(ix.before)pushUndo(ix.before);if(['move','resize','vertex','brush','eraser'].includes(ix.type))render()}
 function finishPolygon(){if(polygonDraft.length<3){polygonDraft=[];renderOverlay();return}const before=interaction?.before||snapshot();newRegion({type:'polygon',points:polygonDraft.slice()},'New polygon');polygonDraft=[];interaction=null;pushUndo(before);setTool('select');render();toast('Polygon region added')}
 function transformBounds(r,newBB){const old=getBounds(r);if(r.geometry.type==='bbox'){r.geometry.bbox=newBB;return}const [ox,oy,ow,oh]=old,[nx,ny,nw,nh]=newBB;const sx=ow>1e-6?nw/ow:1,sy=oh>1e-6?nh/oh:1;r.geometry.points=(r.geometry.points||[]).map(p=>p?[clamp(nx+(p[0]-ox)*sx),clamp(ny+(p[1]-oy)*sy)]:null)}
+function stripFence(raw){const t=raw.trim();if(!t.startsWith('```'))return t;const m=/^```(?:json|crf)\s*\n([\s\S]*?)\n```\s*$/i.exec(t);if(!m)throw Error('Expected one fenced json/crf block');return m[1]}
+function crc32(buf){let c=-1;for(const b of buf){c^=b;for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0)}return (c^-1)>>>0}
+function joinBytes(chunks){const n=chunks.reduce((a,b)=>a+b.length,0),out=new Uint8Array(n);let off=0;for(const b of chunks){out.set(b,off);off+=b.length}return out}
+function zipEncode(entries){
+ const enc=new TextEncoder(),local=[],central=[];let offset=0,limit=0;
+ const header=(size)=>{const a=new Uint8Array(size);return {a,v:new DataView(a.buffer)}};
+ for(const [path,bytes] of entries){
+  const name=enc.encode(path);if(name.length>256||bytes.length>16777216||entries.length>132)throw Error('ZIP entry count/size limit');
+  limit+=bytes.length;if(limit>24*1024*1024)throw Error('ZIP size exceeds 24 MiB');
+  const crc=crc32(bytes),lh=header(30),ch=header(46);
+  lh.v.setUint32(0,0x04034b50,true);lh.v.setUint16(4,20,true);lh.v.setUint16(6,0x0800,true);lh.v.setUint32(14,crc,true);lh.v.setUint32(18,bytes.length,true);lh.v.setUint32(22,bytes.length,true);lh.v.setUint16(26,name.length,true);
+  local.push(lh.a,name,bytes);
+  ch.v.setUint32(0,0x02014b50,true);ch.v.setUint16(4,20,true);ch.v.setUint16(6,20,true);ch.v.setUint16(8,0x0800,true);ch.v.setUint32(16,crc,true);ch.v.setUint32(20,bytes.length,true);ch.v.setUint32(24,bytes.length,true);ch.v.setUint16(28,name.length,true);ch.v.setUint32(42,offset,true);
+  central.push(ch.a,name);
+  offset+=lh.a.length+name.length+bytes.length;
+ }
+ const c=joinBytes(central),tail=header(22);
+ tail.v.setUint32(0,0x06054b50,true);tail.v.setUint16(8,entries.length,true);tail.v.setUint16(10,entries.length,true);tail.v.setUint32(12,c.length,true);tail.v.setUint32(16,offset,true);
+ return joinBytes([...local,c,tail.a]);
+}
+async function zipDecode(raw){
+ if(raw.length>24*1024*1024)throw Error('ZIP archive exceeds 24 MiB');
+ const dv=new DataView(raw.buffer,raw.byteOffset,raw.byteLength),dec=new TextDecoder('utf-8',{fatal:true}),files=new Map();let i=0,total=0;
+ while(i+4<=raw.length&&dv.getUint32(i,true)===0x04034b50){
+  if(i+30>raw.length||files.size>=132)throw Error('Invalid ZIP structure');
+  const flags=dv.getUint16(i+6,true),method=dv.getUint16(i+8,true),crc=dv.getUint32(i+14,true),compressed=dv.getUint32(i+18,true),uncompressed=dv.getUint32(i+22,true),nl=dv.getUint16(i+26,true),ex=dv.getUint16(i+28,true);
+  if(flags&1||flags&8||![0,8].includes(method)||uncompressed>16*1024*1024||uncompressed>Math.max(1,compressed)*200)throw Error('Encrypted, unsupported or oversized ZIP entry');
+  if(i+30+nl+ex+compressed>raw.length)throw Error('Truncated ZIP');
+  const path=dec.decode(raw.subarray(i+30,i+30+nl)),bytes=raw.slice(i+30+nl+ex,i+30+nl+ex+compressed);
+  if(!/^(?:composition\.json|manifest\.json|masks\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*)$/.test(path)||path.includes('..')||files.has(path))throw Error('Unsafe/duplicate ZIP filename');
+  let data=bytes;
+  if(method===8){
+   if(typeof DecompressionStream==='undefined')throw Error('Compressed ZIP requires browser DecompressionStream');
+   const response=new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')));
+   data=new Uint8Array(await response.arrayBuffer());
+  }
+  if(data.length!==uncompressed||crc32(data)!==crc)throw Error('Corrupt ZIP member: '+path);
+  total+=data.length;if(total>64*1024*1024)throw Error('ZIP inflation limit');
+  files.set(path,data);i+=30+nl+ex+compressed;
+ }
+ if(!files.has('composition.json')||i+4>raw.length||dv.getUint32(i,true)!==0x02014b50)throw Error('ZIP central directory/composition missing');
+ return files;
+}
+async function shaHex(buf){if(!crypto?.subtle)throw Error('SHA-256 unavailable in this browser context');const sum=new Uint8Array(await crypto.subtle.digest('SHA-256',buf));return Array.from(sum,x=>x.toString(16).padStart(2,'0')).join('')}
+function decodeDataURL(data){const m=/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(data||'');if(!m)throw Error('Missing PNG bitmap asset');const b=atob(m[1]),out=new Uint8Array(b.length);for(let i=0;i<b.length;i++)out[i]=b.charCodeAt(i);return out}
+function pngSize(data){if(data.length<33||data[0]!==137||data[1]!==80||data[2]!==78||data[3]!==71||String.fromCharCode(...data.slice(12,16))!=='IHDR')throw Error('Invalid mask PNG');const dv=new DataView(data.buffer,data.byteOffset,data.byteLength);return[dv.getUint32(16,false),dv.getUint32(20,false)]}
+function strokeToPNG(st){
+ const w=Math.min(1536,scene.canvas.width),h=Math.max(64,Math.round(w*scene.canvas.height/scene.canvas.width));
+ const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:false});
+ ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);ctx.strokeStyle='#fff';ctx.fillStyle='#fff';ctx.lineWidth=st.brush_width*w;ctx.lineCap='round';ctx.lineJoin='round';
+ let previous=null;
+ for(const p of st.points){if(!p){previous=null;continue}
+  if(previous){ctx.beginPath();ctx.moveTo(previous[0]*w,previous[1]*h);ctx.lineTo(p[0]*w,p[1]*h);ctx.stroke()}
+  else{ctx.beginPath();ctx.arc(p[0]*w,p[1]*h,ctx.lineWidth/2,0,Math.PI*2);ctx.fill()}
+  previous=p;
+ }
+ return {bytes:decodeDataURL(c.toDataURL('image/png')),width:w,height:h};
+}
+async function buildExport(){
+ const doc=exportDocument(),images=new Map();doc.assets=[];
+ for(let index=0;index<scene.regions.length;index++){
+  const r=scene.regions[index],g=doc.regions[index].geometry;
+  if(g.type!=='mask')continue;
+  const assetId=g.asset_id;
+  let bytes,width,height;
+  if(r.geometry.type==='stroke'){({bytes,width,height}=strokeToPNG(r.geometry))}
+  else {bytes=decodeDataURL(scene.maskData?.[assetId]);[width,height]=pngSize(bytes)}
+  if(bytes.length>16*1024*1024||width*height>16777216)throw Error('Mask exceeds P02 safety limit');
+  const path='masks/'+assetId+'.png';
+  if(images.has(assetId))throw Error('Duplicate mask asset ID: '+assetId);
+  images.set(path,bytes);
+  doc.assets.push({id:assetId,path,sha256:await shaHex(bytes),media_type:'image/png',width,height});
+ }
+ if(!doc.assets.length)delete doc.assets;
+ validateCRF(doc);
+ return {doc,images};
+}
+function saveDownload(bytes,name,type){
+ const url=URL.createObjectURL(new Blob([bytes],{type})),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function downloadJSON(){
+ try{
+  const {doc,images}=await buildExport(),enc=new TextEncoder(),json=enc.encode(JSON.stringify(doc,null,2));
+  if(!images.size){saveDownload(json,'coherent-regions-scene.crf.json','application/json');toast('CRF JSON exported and validated');return}
+  const manifest=enc.encode(JSON.stringify({format:'coherent-regions-archive',version:1}));
+  const zip=zipEncode([['composition.json',json],['manifest.json',manifest],...images]);
+  saveDownload(zip,'coherent-regions-scene.crf.zip','application/zip');
+  toast('CRF ZIP exported','',`${images.size} SHA-256 verified mask(s) included`);
+ }catch(e){toast('Export blocked: '+e.message,true)}
+}
+async function copyJSON(){
+ try{const {doc,images}=await buildExport();if(images.size)throw Error('Masks require CRF ZIP export; JSON alone would lose binary data');const text=JSON.stringify(doc,null,2);
+  await navigator.clipboard.writeText(text);toast('Valid CRF JSON copied');
+ }catch(e){toast('Cannot copy CRF: '+e.message,true)}
+}
+async function parseArchive(bytes){
+ const files=await zipDecode(bytes),dec=new TextDecoder('utf-8',{fatal:true}),source=dec.decode(files.get('composition.json')),doc=validateCRF(source),maps={};
+ if(files.has('manifest.json')){
+  const m=JSON.parse(dec.decode(files.get('manifest.json')));if(JSON.stringify(m)!==JSON.stringify({format:'coherent-regions-archive',version:1}))throw Error('Unsupported ZIP manifest');
+ }
+ const assets=doc.assets||[],paths=new Set(assets.map(a=>a.path));
+ if(new Set(assets.map(a=>a.id)).size!==assets.length||files.size-1-(files.has('manifest.json')?1:0)!==paths.size)throw Error('Missing/orphan/duplicate asset');
+ for(const a of assets){
+  const data=files.get(a.path);if(!data||a.media_type!=='image/png')throw Error('ZIP must contain PNG masks at declared paths');
+  const [w,h]=pngSize(data);
+  if(w!==a.width||h!==a.height||w*h>16777216||await shaHex(data)!==a.sha256)throw Error('Mask hash or dimensions mismatch: '+a.path);
+  const chunk=0x8000;let b64='';for(let i=0;i<data.length;i+=chunk)b64+=String.fromCharCode(...data.subarray(i,i+chunk));maps[a.id]='data:image/png;base64,'+btoa(b64);
+ }
+ for(const name of files.keys())if(name!=='composition.json'&&name!=='manifest.json'&&!paths.has(name))throw Error('Untrusted archive entry');
+ return {doc,maskData:maps};
+}
 function strictParseCRF(raw){
  if(typeof raw!=='string'||new TextEncoder().encode(raw).length>1048576)throw Error('CRF JSON exceeds 1 MiB');
  const text=stripFence(raw), n=text.length;let i=0;
