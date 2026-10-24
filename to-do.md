@@ -5,7 +5,7 @@ Read `PHASES.md` first. **Exactly one phase per chat.** Mark DONE with phase-app
 | Phase | Status | Depends on |
 |---|---|---|
 | P01 — Foundation, probes, CRF, tests | **DONE (offline acceptance; live Forge deferred to P07)** | — |
-| P02 — Regional editor and CRF UI | **IN PROGRESS — remaining offline influence/overlap acceptance; live Forge deferred to P07** | P01 |
+| P02 — Regional editor and CRF UI | **DONE — offline acceptance 2026-10-25; live Forge deferred to P07** | P01 |
 | P03 — SDXL synchronized tiled generation | READY | P01 |
 | P04 — SDXL global coherence | BLOCKED | P03 |
 | P05 — Anima + Q4 GGUF parity | BLOCKED | P01, P03, P04 findings |
@@ -54,7 +54,7 @@ Read `PHASES.md` first. **Exactly one phase per chat.** Mark DONE with phase-app
 
 ## Active phase — P02: Integrated regional editor and CRF workflow (2026-10-24)
 
-**Status:** editor and isolated Gradio/browser tests recorded; the remaining influence/overlap features and final-head CI still need offline verification. **Live Forge testing is deferred to P07, not a P02 blocker.** Remain on branch `phase/P02-editor`, draft PR #2 until offline acceptance is complete.
+**Status:** DONE (offline acceptance); PR #2 merged as `2ee721a`; P02 follow-up PR #3 verifies numerical influence and advisories. **Live Forge/SDXL/Anima/Q4 tests are P07 only.**
 
 ### Actual repository inspection / acceptance boundaries
 - P01 supplies a strict Python CRF v1 validator, bbox/polygon raster and read-only Forge `scripts.Script` diagnostic. No editor is mounted yet.
@@ -66,9 +66,9 @@ Read `PHASES.md` first. **Exactly one phase per chat.** Mark DONE with phase-app
 - [x] Reuse the prototype's canvas/layer/inspector functions and repair state invariants: five-region visibility while editing, box/polygon/brush/erase, locks/visibility/enabled, resize/polygon points, zoom/pan, reorder/duplicate/delete, numeric geometry, prompt and adapter edits, independent undo/redo and autosave.
 - [x] Bring export/paste/JSON file import under CRF v1: no `ui` or `stroke` in exported schema; preserve null/missing/empty prompts and persistent editor properties using CRF `regions[].extensions`; validate before application, explicit preview/replace/merge/conflict mapping, aspect policy and safe failure.
 - [x] Raster brush regions must use real bounded mask assets and ZIP archive import/export (hash/path/size/mime/duplicate/decompression checks); no fake generated masks or silent data loss; reject unsafe/missing assets transactionally.
-- [ ] Add deterministic correct `weighted` / `priority` effective mask previews and coverage warnings with separate visible versus enabled semantics; clearly label unconnected generation/capability controls.
+- [x] Add deterministic correct `weighted` / `priority` planned mask previews, numerical inspection and coverage warnings with separate visible versus enabled semantics; clearly label unconnected generation/capability controls.
 - [x] Add browser-based UI interaction tests including five visible regions, undo/reload/CRF exports/imports, bad inputs, brush and masks, overlaps, sibling isolation and aspect mapping; Python ZIP/CRF semantic tests and CI.
-- [ ] Run local/CI tests on published commit, verify repository branch and PR, record exact offline evidence. Mark DONE when offline P02 acceptance is demonstrated; do not advance to P03.
+- [x] Run offline CI tests on published commit, verify branch/PR, record actual evidence. Final acceptance run `40137761285` PASS at `2416d9d`; no installed Forge runtime tested.
 
 ### P02 implementation evidence and acceptance boundary (2026-10-24)
 - **Canonical publish checkpoint:** full-width top-level **Coherent Diffusion** tab registered with Forge Neo's documented `script_callbacks.on_ui_tabs` API, with P01 Script diagnostics preserved in txt2img and no diffusion callbacks/patches. Editor source is self-contained `coherent_diffusion/editor/index.html` (no remote assets); independently verified inside a real Gradio 4 UI using a minimal Forge callback stub, not a running Forge Neo application.
@@ -83,16 +83,24 @@ Read `PHASES.md` first. **Exactly one phase per chat.** Mark DONE with phase-app
 ### P02 resumption plan — 2026-10-24 (pre-implementation)
 Inspection of the live branch at `e090bc7`: the editor and ZIP/CRF path exist, but UX-04 is not proven. `paintWeights()` only draws a single aggregate tinted alpha; the priority branch drops every lower layer on any foreground hit, and its test checks merely one nonzero pixel. No per-region normalized coefficient inspector, uncovered-area feedback, or incompatible overlapping LoRA warnings is present. P02 remains the **only** phase in scope.
 
-- [ ] Replace the approximate single-channel visualization with a deterministic, model-independent **planned mixing** sampler returning per-region and base coefficients at any normalized point. Weighted: normalized nonnegative `mask * generation_weight` plus base. Priority: stable top-first fractional occlusion (mask coverage, not display visibility), then normalized weighted contributions. Keep display opacity and the `visible` flag out of coefficient math. Mask raster sampling and feather widths remain documented approximations, not P06 backend results.
-- [ ] Show inspectable point coefficients in the existing canvas footer, render a color-mixed influence map, and warn about uncovered / near-zero base areas and overlapping differing LoRA references or requested isolation. Make these warnings clearly advisory; no false backend precision claims.
-- [ ] Extend Chromium regression with numeric weighted / priority reference cases, layer visibility versus enabled, zero-weight and base-only conditions, fixed tie-break order, coverage warnings, and overlapping LoRA warning. Verify selected edits and PNG cache behavior remain safe.
-- [ ] Publish candidate, run and inspect required Python / Chromium / isolated Gradio CI checks on exact candidate; update evidence. **Do not perform a real Forge smoke before P07.** If offline P02 tests pass, accept and merge regardless of live Forge availability; do not start P03 in this chat.
+- [x] Replace the approximate single-channel visualization with a deterministic, model-independent **planned mixing** sampler returning per-region and base coefficients at any normalized point. Weighted: normalized nonnegative `mask * generation_weight` plus base. Priority: stable top-first fractional occlusion (mask coverage, not display visibility), then normalized weighted contributions. Keep display opacity and the `visible` flag out of coefficient math. Mask raster sampling and feather widths remain documented approximations, not P06 backend results.
+- [x] Show inspectable point coefficients in the existing canvas footer, render a color-mixed influence map, and warn about uncovered / near-zero base areas and overlapping differing LoRA references or requested isolation. Make these warnings clearly advisory; no false backend precision claims.
+- [x] Extend Chromium regression with numeric weighted / priority reference cases, layer visibility versus enabled, zero-weight and base-only conditions, fixed tie-break order, coverage warnings, and overlapping LoRA warning. Verify selected edits and PNG cache behavior remain safe.
+- [x] Publish candidate, run and inspect required Python / Chromium / isolated Gradio CI checks on exact candidate; update evidence. **Do not perform a real Forge smoke before P07.** If offline P02 tests pass, accept and merge regardless of live Forge availability; do not start P03 in this chat.
 
 ### P02 final offline acceptance — 2026-10-25 (plan before code)
 
 **Baseline:** P02 PR #2 was squash-merged at `2ee721a`, despite remaining P02 items still explicitly unchecked in this tracker. On merged main, `plannedInfluenceAt` computes normalized weighted and fractional-priority shares with index-stable tie-breaking, and `paintWeights` draws the composite, but only one nonzero-alpha pixel was tested. The footer samples the center, not the user's pointer; near-zero base warnings and unsupported isolation warnings are missing. Resume **P02 only**, rather than starting P03.
 
-- [ ] Make planned coefficient sampling inspectable at actual canvas/thumbnail pointer coordinates, keeping view visibility separate from generation-enabled state; retain UI-only approximation labeling. Clarify fractional priority, weight-zero and deterministic tie behavior.
-- [ ] Warn distinctly on uncovered points and base share below a documented threshold; flag incompatible overlapping adapter intents and requested prediction isolation as advisory, not activated capabilities; avoid false alerts from invisible-only display toggles or unavailable PNG cache pixels.
-- [ ] Add Chromium fixture-based deterministic reference cases: normalized weighted and priority sums/shares, feathered top-layer partial occlusion, stable equal-z document tie, base-only and disabled/zero-weight modes, visibility independence, coefficient point readout, coverage/LoRA warnings, PNG preview cache, and no errors.
-- [ ] Update P02 editor documentation and tracker accurately; publish candidate on this phase branch with a PR, run exact-head Python/Chromium/isolated Gradio CI, inspect failures and repair as needed. Mark P02 DONE only on credible offline acceptance evidence; actual Forge/model/GPU checks remain P07-only.
+- [x] Make planned coefficient sampling inspectable at actual canvas/thumbnail pointer coordinates, keeping view visibility separate from generation-enabled state; retain UI-only approximation labeling. Clarify fractional priority, weight-zero and deterministic tie behavior.
+- [x] Warn distinctly on uncovered points and base share below a documented threshold; flag incompatible overlapping adapter intents and requested prediction isolation as advisory, not activated capabilities; avoid false alerts from invisible-only display toggles or unavailable PNG cache pixels.
+- [x] Add Chromium fixture-based deterministic reference cases: normalized weighted and priority sums/shares, feathered top-layer partial occlusion, stable equal-z document tie, base-only and disabled/zero-weight modes, visibility independence, coefficient point readout, coverage/LoRA warnings, PNG preview cache, and no errors.
+- [x] Update P02 editor documentation and tracker accurately; publish candidate on this phase branch with a PR, run exact-head Python/Chromium/isolated Gradio CI, inspect failures and repair as needed. Mark P02 DONE only on credible offline acceptance evidence; actual Forge/model/GPU checks remain P07-only.
+
+### P02 acceptance / publication — 2026-10-25
+
+- **Behavior:** deterministic planned `weighted` and fractional `priority` mask shares, index-stable equal-z ties, cursor-point readout and a color-mixed preview. Display `visible` has no conditioning effect; `enabled=false` and zero-weight do. Coverage/low-base and LoRA overlap/prediction-isolation warnings are advisory only.
+- **Regression:** new `tests/influence_browser.cjs` validates numerical coefficients, feathered partial occlusion, visibility, enabled/zero weight, base-only and uncovered authoring states, differing/equal LoRA references, unavailable isolation, cursor point position and asynchronously decoded PNG masks.
+- **Verified candidate:** [GitHub Actions 40137761285](https://github.com/Neb963/forge-coherent-diffusion/actions/runs/40137761285) on `2416d9dd0720bd2c3ccb2e23239724873c8f2efb` completed **SUCCESS**: Python `cpu-tests` PASS (30 tests), original Chromium editor browser PASS, new influence numerical Chromium PASS, isolated Gradio 4 tab/iframe PASS. Earlier failure in `40137558299` was fixture-injection timing: editor `pagehide` autosaved before reload; corrected by setting fixture before editor initialization, then retested.
+- **Acceptance boundary:** P02 fully accepted offline. No Forge Neo host run, model weights, GPU, low-VRAM sampler, actual conditioning or LoRA activation tested; those remain P03–P07 as defined. This PR only closes P02.
+- **Publication:** phase branch `phase/P02-influence-acceptance`, [PR #3](https://github.com/Neb963/forge-coherent-diffusion/pull/3), prepared for squash merge. P03 becomes next eligible phase after accepted merge.
