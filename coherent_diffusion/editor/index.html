@@ -163,6 +163,8 @@ function drawShape(r,isSelected){const g=r.geometry,col=r.color||'#9b9ffa';const
  }
 }
 const influenceMaskCache=new Map(),pendingMaskCache=new Set();
+// UI-only planned mixing, sampled at cursor position; never read as model attribution.
+const influenceCursor={x:.5,y:.5};
 function rasterMaskSample(r,x,y){
  const g=r.geometry,w=scene.canvas.width,h=scene.canvas.height,pt=[x,y];
  let inside=false,edge=0;
@@ -224,7 +226,7 @@ function rasterMaskSample(r,x,y){
  function influenceReadoutAt(x,y){
   const p=plannedInfluenceAt(x,y);
   const items=p.regions.sort((a,b)=>b.share-a.share);
-  const labels=['Base '+(p.base*100).toFixed(1)+'%',...items.map(r=>r.name+' '+(r.share*100).toFixed(1)+'%')];
+  const labels=['At '+(x*100).toFixed(1)+'%, '+(y*100).toFixed(1)+'%','Base '+(p.base*100).toFixed(1)+'%',...items.map(r=>r.name+' '+(r.share*100).toFixed(1)+'%')];
   if(p.uncovered)labels.unshift('NO COVERAGE');
   const el=$('influenceReadout');
   el.title=labels.join(' · ')+' — planned mask blend, not neural attribution';
@@ -240,10 +242,11 @@ function rasterMaskSample(r,x,y){
   if(!active)return;
   const width=canvas.width,height=canvas.height,ctx=canvas.getContext('2d');
   const frame=ctx.createImageData(width,height);
-  let uncovered=0,conflicts=0;
+  let uncovered=0,lowBase=0,conflicts=0;
   for(let j=0;j<height;j++)for(let i=0;i<width;i++){
    const mix=plannedInfluenceAt((i+.5)/width,(j+.5)/height);
    if(mix.uncovered)uncovered++;
+   else if(mix.regions.length&&mix.base<.05)lowBase++;
    const loraSignatures=new Set(mix.regions.filter(r=>r.loras.length).map(r=>
     JSON.stringify(r.loras.map(l=>[l.name,l.weight,l.requested_isolation]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))))));
    if(loraSignatures.size>1)conflicts++;
@@ -264,10 +267,16 @@ function rasterMaskSample(r,x,y){
   const total=width*height;
   const notes=['Planned mask mix ('+width+'×'+height+' samples); not a measured model effect.'];
   if(pendingMaskCache.size)notes.push('PNG mask preview still loading.');
-  if(uncovered)notes.push('No conditioning coverage at '+(100*uncovered/total).toFixed(1)+'% of sampled points.');
-  if(conflicts)notes.push('Different LoRA intents overlap at '+(100*conflicts/total).toFixed(1)+'% of sampled points; isolation is not implemented.');
+  // A mask PNG loading asynchronously must not be treated as absent coverage.
+  if(!pendingMaskCache.size){
+   if(uncovered)notes.push('No conditioning coverage at '+(100*uncovered/total).toFixed(1)+'% of sampled points.');
+   if(lowBase)notes.push('Global base contribution below 5% at '+(100*lowBase/total).toFixed(1)+'% of sampled points; regional intent may dominate.');
+  }
+  if(!pendingMaskCache.size&&conflicts)notes.push('Different LoRA intents overlap at '+(100*conflicts/total).toFixed(1)+'% of sampled points; isolation is not implemented.');
+  const predictionRequests=scene.regions.reduce((n,r)=>n+(r.enabled===false||Number(r.blend?.weight)<=0?0:(r.loras||[]).filter(l=>l.requested_isolation==='prediction').length),0);
+  if(predictionRequests)notes.push(predictionRequests+' prediction-isolation LoRA request(s) are advisory only; no adapter backend is connected in P02.');
   warnings.textContent=notes.join(' ');
-  influenceReadoutAt(.5,.5);
+  influenceReadoutAt(influenceCursor.x,influenceCursor.y);
  }
  function renderOverlay(){paintWeights();const ov=$('overlay');ov.innerHTML='';const show=view!=='image';if(view==='tiles'){const tiles=4,rows=3;for(let i=1;i<tiles;i++)svgEl('line',{x1:i*250,x2:i*250,y1:0,y2:750,stroke:'#f0e7ff','stroke-width':1.5,'stroke-dasharray':'7 8','stroke-opacity':.8});for(let i=1;i<rows;i++)svgEl('line',{x1:0,x2:1000,y1:i*250,y2:i*250,stroke:'#f0e7ff','stroke-width':1.5,'stroke-dasharray':'7 8','stroke-opacity':.8});for(let j=0;j<rows;j++)for(let i=0;i<tiles;i++){const txt=svgEl('text',{x:i*250+12,y:j*250+24,fill:'#fff','font-size':12,'font-family':'sans-serif','font-weight':700,'paint-order':'stroke',stroke:'#17222b','stroke-width':3});txt.textContent=`T${j*tiles+i+1}`}}
  if(show){for(const r of sorted())if(r.visible)drawShape(r,r.id===selected);if(polygonDraft.length){svgEl('path',{d:svgPath(polygonDraft),stroke:'#f9f7ff','stroke-width':2,'stroke-dasharray':'5 5',fill:'none','pointer-events':'none'});for(const p of polygonDraft)svgEl('circle',{cx:p[0]*1000,cy:p[1]*750,r:3.5,fill:'#e5e6ff','pointer-events':'none'})}}
@@ -329,7 +338,7 @@ function surfaceDown(e){if(e.button>1)return;const p=localPos(e);if(e.button===1
 function moveGeometry(g,start,delta){const [dx,dy]=delta;if(g.type==='bbox'){const [x,y,w,h]=g.bbox;g.bbox[0]=clamp(x+dx,0,1-w);g.bbox[1]=clamp(y+dy,0,1-h)}else if(g.points){const bb=getBounds({geometry:g});const ax=clamp(dx,-bb[0],1-bb[0]-bb[2]),ay=clamp(dy,-bb[1],1-bb[1]-bb[3]);g.points=g.points.map(p=>p?[clamp(p[0]+ax),clamp(p[1]+ay)]:null)}}
 function resizeBox(orig,handle,p){const [x,y,w,h]=orig.bbox;let x1=x,y1=y,x2=x+w,y2=y+h;if(handle.includes('w'))x1=Math.min(p[0],x2-.012);if(handle.includes('e'))x2=Math.max(p[0],x1+.012);if(handle.includes('n'))y1=Math.min(p[1],y2-.012);if(handle.includes('s'))y2=Math.max(p[1],y1+.012);return[clamp(x1),clamp(y1),clamp(x2-x1,.012),clamp(y2-y1,.012)]}
 function eraseAt(p){const r=region();if(!r||r.geometry.type!=='stroke')return;r.geometry.points=r.geometry.points.map(q=>q&&Math.hypot(q[0]-p[0],(q[1]-p[1])*1.333)>.036?q:null)}
-function surfaceMove(e){const p=localPos(e);$('coordinateReadout').textContent=`X ${Math.round(p[0]*scene.canvas.width)} · Y ${Math.round(p[1]*scene.canvas.height)}`;if(view==='influence')influenceReadoutAt(p[0],p[1]);if(!interaction)return;if(interaction.type==='raster-pending'){interaction.points.push(p);return}if(interaction.type==='raster'){rasterLine(interaction,p);return}if(interaction.type==='pan'){panX=interaction.panX+(e.clientX-interaction.x);panY=interaction.panY+(e.clientY-interaction.y);updateZoom();return}if(interaction.type==='box-drawing'){interaction.current=p;renderOverlay();return}if(interaction.type==='eraser'){eraseAt(p);renderOverlay();return}if(interaction.type==='brush'){const r=region();if(r&&r.geometry.type==='stroke'&&Math.hypot(p[0]-interaction.last[0],p[1]-interaction.last[1])>.004){r.geometry.points.push(p);interaction.last=p;renderOverlay()}return}const r=region();if(!r||r.id!==interaction.region)return;r.geometry=cp(interaction.origin);if(interaction.type==='move')moveGeometry(r.geometry,interaction.start,[p[0]-interaction.start[0],p[1]-interaction.start[1]]);if(interaction.type==='resize')r.geometry.bbox=resizeBox(interaction.origin,interaction.handle,p);if(interaction.type==='vertex'){r.geometry.points[interaction.vertex]=p}renderOverlay()}
+function surfaceMove(e){const p=localPos(e);$('coordinateReadout').textContent=`X ${Math.round(p[0]*scene.canvas.width)} · Y ${Math.round(p[1]*scene.canvas.height)}`;if(view==='influence'){influenceCursor.x=p[0];influenceCursor.y=p[1];influenceReadoutAt(p[0],p[1]);}if(!interaction)return;if(interaction.type==='raster-pending'){interaction.points.push(p);return}if(interaction.type==='raster'){rasterLine(interaction,p);return}if(interaction.type==='pan'){panX=interaction.panX+(e.clientX-interaction.x);panY=interaction.panY+(e.clientY-interaction.y);updateZoom();return}if(interaction.type==='box-drawing'){interaction.current=p;renderOverlay();return}if(interaction.type==='eraser'){eraseAt(p);renderOverlay();return}if(interaction.type==='brush'){const r=region();if(r&&r.geometry.type==='stroke'&&Math.hypot(p[0]-interaction.last[0],p[1]-interaction.last[1])>.004){r.geometry.points.push(p);interaction.last=p;renderOverlay()}return}const r=region();if(!r||r.id!==interaction.region)return;r.geometry=cp(interaction.origin);if(interaction.type==='move')moveGeometry(r.geometry,interaction.start,[p[0]-interaction.start[0],p[1]-interaction.start[1]]);if(interaction.type==='resize')r.geometry.bbox=resizeBox(interaction.origin,interaction.handle,p);if(interaction.type==='vertex'){r.geometry.points[interaction.vertex]=p}renderOverlay()}
 function surfaceUp(){if(!interaction)return;const ix=interaction;interaction=null;if(ix.type==='raster-pending'){ix.finished=true;return}if(ix.type==='raster'){finishRaster(ix);return}if(ix.type==='box-drawing'){const [a,b]=[ix.start,ix.current];const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]),w=Math.abs(a[0]-b[0]),h=Math.abs(a[1]-b[1]);if(w>.012&&h>.012){newRegion({type:'bbox',bbox:[x,y,w,h]},'New rectangle');pushUndo(ix.before);setTool('select');render();toast('Rectangle added')}else renderOverlay();return}if(ix.before)pushUndo(ix.before);if(['move','resize','vertex','brush','eraser'].includes(ix.type))render()}
 function finishPolygon(){if(polygonDraft.length<3){polygonDraft=[];renderOverlay();return}const before=interaction?.before||snapshot();newRegion({type:'polygon',points:polygonDraft.slice()},'New polygon');polygonDraft=[];interaction=null;pushUndo(before);setTool('select');render();toast('Polygon region added')}
 function transformBounds(r,newBB){const old=getBounds(r);if(r.geometry.type==='bbox'){r.geometry.bbox=newBB;return}const [ox,oy,ow,oh]=old,[nx,ny,nw,nh]=newBB;const sx=ow>1e-6?nw/ow:1,sy=oh>1e-6?nh/oh:1;r.geometry.points=(r.geometry.points||[]).map(p=>p?[clamp(nx+(p[0]-ox)*sx),clamp(ny+(p[1]-oy)*sy)]:null)}

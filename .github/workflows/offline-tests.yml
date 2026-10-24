@@ -33,5 +33,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Editor Chromium interaction / CRF archive round-trip
         run: node tests/editor_browser.cjs
+      - name: Numerical P02 planned-influence browser conformance
+        run: node tests/influence_browser.cjs
       - name: Verify actual Gradio 4 iframe rendering
         run: node tests/gradio_browser.cjs
