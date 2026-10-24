@@ -2,7 +2,7 @@
 import gradio as gr
 from pathlib import Path
 from html import escape
-from modules import scripts
+from modules import scripts, script_callbacks
 from coherent_diffusion.forge_bridge import inspect_loaded_host, inspect_process
 
 _LAST = None
@@ -17,6 +17,17 @@ def editor_iframe():
             'style="width:100%;height:890px;min-height:650px;border:1px solid #303748;'
             'border-radius:10px;background:#0c0f15;" '
             f'srcdoc="{escape(page, quote=True)}"></iframe>')
+
+def editor_tab():
+    """Forge's official full-width UI tab integration; no sampler hooks."""
+    with gr.Blocks(analytics_enabled=False) as panel:
+        gr.Markdown("**P02 — Regional composition editor.** Create/export CRF scenes here. SDXL/Anima generation is not connected yet.")
+        gr.HTML(value=editor_iframe())
+    return [(panel, "Coherent Diffusion", "coherent_diffusion")]
+
+
+script_callbacks.on_ui_tabs(editor_tab)
+
 
 def probe_ui():
     return _LAST if _LAST is not None else inspect_loaded_host()
@@ -35,9 +46,7 @@ class Script(scripts.Script):
             inspect_button = gr.Button("Inspect loaded model")
             result = gr.JSON(label="Capability / encoder evidence", value={})
             inspect_button.click(fn=probe_ui, inputs=[], outputs=[result], queue=False)
-        with gr.Accordion("Coherent Diffusion — regional composition editor (P02)", open=False):
-            gr.Markdown("Local CRF editor; **generation remains unavailable** until sampler integration. Editor drafts stay in this browser.")
-            gr.HTML(value=editor_iframe())
+        gr.Markdown("Use the **Coherent Diffusion** top-level tab for the full-width P02 regional editor; drafts remain local to your browser.")
         return [enabled]
 
     def process(self, p, enabled=False):
