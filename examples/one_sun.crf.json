@@ -1,0 +1,93 @@
+{
+  "format": "coherent-regions",
+  "version": 1,
+  "canvas": {
+    "width": 1024,
+    "height": 768,
+    "coordinate_system": "normalized_top_left",
+    "aspect_policy": "preserve_relative"
+  },
+  "global": {
+    "scene_prompt": "One sun above a coast",
+    "style_prompt": "Natural photography",
+    "negative_prompt": "bad perspective",
+    "base_weight": 0.25
+  },
+  "blend": {
+    "policy": "weighted"
+  },
+  "regions": [
+    {
+      "id": "sky",
+      "name": "Sky",
+      "geometry": {
+        "type": "bbox",
+        "bbox": [
+          0,
+          0,
+          1,
+          0.5
+        ]
+      },
+      "prompt": "Cloudy blue sky",
+      "negative_prompt": "",
+      "inherit_style": true,
+      "enabled": true,
+      "visible": true,
+      "blend": {
+        "weight": 1,
+        "feather_px": 16,
+        "z_index": 10
+      },
+      "loras": []
+    },
+    {
+      "id": "sea",
+      "name": "sea",
+      "geometry": {
+        "type": "bbox",
+        "bbox": [
+          0,
+          0.5,
+          1,
+          0.4
+        ]
+      },
+      "prompt": "Cloudy blue sky",
+      "negative_prompt": "",
+      "inherit_style": true,
+      "enabled": true,
+      "visible": true,
+      "blend": {
+        "weight": 1,
+        "feather_px": 16,
+        "z_index": 10
+      },
+      "loras": []
+    },
+    {
+      "id": "sun",
+      "name": "sun",
+      "geometry": {
+        "type": "bbox",
+        "bbox": [
+          0.6,
+          0.1,
+          0.2,
+          0.2
+        ]
+      },
+      "prompt": "Cloudy blue sky",
+      "negative_prompt": "",
+      "inherit_style": true,
+      "enabled": true,
+      "visible": true,
+      "blend": {
+        "weight": 1,
+        "feather_px": 16,
+        "z_index": 10
+      },
+      "loras": []
+    }
+  ]
+}
