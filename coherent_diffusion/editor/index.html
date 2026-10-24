@@ -318,16 +318,17 @@ async function zipDecode(raw){
   files.set(path,data);local.set(path,{offset,crc,method,compressed,uncompressed});
   i+=30+nl+ex+compressed;
  }
- const cdStart=i;let n=0;
+ const cdStart=i;let n=0,centralSeen=new Set();
  while(i+4<=raw.length&&dv.getUint32(i,true)===0x02014b50){
   if(i+46>raw.length)throw Error('Truncated ZIP central directory');
   const flags=dv.getUint16(i+8,true),method=dv.getUint16(i+10,true),crc=dv.getUint32(i+16,true),compressed=dv.getUint32(i+20,true),uncompressed=dv.getUint32(i+24,true),nl=dv.getUint16(i+28,true),ex=dv.getUint16(i+30,true),comment=dv.getUint16(i+32,true),attrs=dv.getUint32(i+38,true),offset=dv.getUint32(i+42,true);
   if(i+46+nl+ex+comment>raw.length)throw Error('Truncated ZIP central entry');
   const name=dec.decode(raw.subarray(i+46,i+46+nl)),meta=local.get(name),mode=attrs>>>16;
+  if(centralSeen.has(name))throw Error('Duplicate ZIP central name: '+name);centralSeen.add(name);
   if(!meta||flags&9||method!==meta.method||crc!==meta.crc||compressed!==meta.compressed||uncompressed!==meta.uncompressed||offset!==meta.offset||(mode&0o170000)===0o120000)throw Error('Unsafe or inconsistent ZIP central entry');
   n++;i+=46+nl+ex+comment;
  }
- if(i+22!==raw.length||dv.getUint32(i,true)!==0x06054b50||!files.has('composition.json')||n!==local.size||
+ if(i+22!==raw.length||dv.getUint32(i,true)!==0x06054b50||!files.has('composition.json')||n!==local.size||centralSeen.size!==local.size||
     dv.getUint16(i+8,true)!==n||dv.getUint16(i+10,true)!==n||
     dv.getUint32(i+12,true)!==i-cdStart||dv.getUint32(i+16,true)!==cdStart||dv.getUint16(i+20,true)!==0)
    throw Error('ZIP central directory/member count mismatch');
