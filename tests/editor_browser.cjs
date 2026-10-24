@@ -124,6 +124,23 @@ const { spawnSync } = require('node:child_process');
   await page.locator('#modalClose').click();
   assert.equal(await page.locator('#layerList .layer').count(),12,'invalid input preserved current project');
 
+
+  // Check UI validator against the authoritative Python/P01 conformance corpus.
+  const fixtures=JSON.parse(fs.readFileSync('tests/fixtures/crf_conformance.json','utf8'));
+  await page.locator('#importBtn').click();
+  for(const item of fixtures.valid){
+    await page.locator('#importTextarea').fill(JSON.stringify(item.document));
+    await page.locator('#validateBtn').click();
+    assert.equal(await page.locator('#applyImportBtn').isDisabled(),false,'valid fixture rejected: '+item.name);
+  }
+  for(const item of fixtures.invalid){
+    await page.locator('#importTextarea').fill(JSON.stringify(item.document));
+    await page.locator('#validateBtn').click();
+    assert.equal(await page.locator('#applyImportBtn').isDisabled(),true,'invalid fixture accepted: '+item.name);
+  }
+  await page.locator('#modalClose').click();
+  assert.equal(await page.locator('#layerList .layer').count(),12,'conformance previews never mutate scene');
+
   assert.deepEqual(errors,[],'no uncaught browser script errors');
   await browser.close();await new Promise(resolve=>server.close(resolve));
   console.log('P02 browser editor: PASS (5 regions, edit, export, Python conformance, reload, bad import, brush ZIP)');
