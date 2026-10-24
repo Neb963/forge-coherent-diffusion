@@ -6,7 +6,7 @@ Read `PHASES.md` first. **Exactly one phase per chat.** Mark DONE with phase-app
 |---|---|---|
 | P01 — Foundation, probes, CRF, tests | **DONE (offline acceptance; live Forge deferred to P07)** | — |
 | P02 — Regional editor and CRF UI | **DONE — offline acceptance 2026-10-25; live Forge deferred to P07** | P01 |
-| P03 — SDXL synchronized tiled generation | READY | P01 |
+| P03 — SDXL synchronized tiled generation | IN PROGRESS (offline) | P01 |
 | P04 — SDXL global coherence | BLOCKED | P03 |
 | P05 — Anima + Q4 GGUF parity | BLOCKED | P01, P03, P04 findings |
 | P06 — Regional prompts, LoRAs, controls | BLOCKED | P02, P04, P05 |
@@ -104,3 +104,20 @@ Inspection of the live branch at `e090bc7`: the editor and ZIP/CRF path exist, b
 - **Verified candidate:** [GitHub Actions 40137761285](https://github.com/Neb963/forge-coherent-diffusion/actions/runs/40137761285) on `2416d9dd0720bd2c3ccb2e23239724873c8f2efb` completed **SUCCESS**: Python `cpu-tests` PASS (30 tests), original Chromium editor browser PASS, new influence numerical Chromium PASS, isolated Gradio 4 tab/iframe PASS. Earlier failure in `40137558299` was fixture-injection timing: editor `pagehide` autosaved before reload; corrected by setting fixture before editor initialization, then retested.
 - **Acceptance boundary:** P02 fully accepted offline. No Forge Neo host run, model weights, GPU, low-VRAM sampler, actual conditioning or LoRA activation tested; those remain P03–P07 as defined. This PR only closes P02.
 - **Publication:** phase branch `phase/P02-influence-acceptance`, [PR #3](https://github.com/Neb963/forge-coherent-diffusion/pull/3), prepared for squash merge. P03 becomes next eligible phase after accepted merge.
+
+## Active phase — P03: SDXL synchronized tiled sampler (2026-10-25)
+
+**Status:** IN PROGRESS (offline P03 only). Branch `phase/P03-sdxl-sync`. Baseline main `6adc1bdc7fd2a284fe12f738b03b258e849c5ed8` (P02 accepted and merged).
+
+### Repository/source inspection before implementation
+- Current production code contains only P01's scalar CPU `sync_reference.py`, CRF/region editor and read-only diagnostic Script. No torch tensor sampler, SDXL denoiser bridge, coherent generation invocation or full-canvas memory coordinator exists. The P02 editor deliberately does not call inference.
+- Reviewed `docs/DESIGN.md` §§5–7, 11–12, `docs/P01_RUNTIME_PROBES.md`, current Forge Neo `backend/sampling/sampling_function.py`, `backend/diffusion_engine/sdxl.py`, `backend/patcher/vae.py` and MultiDiffusion for the *source-level* interfaces. Forge exposes `sampling_function_inner` (returns CFG-combined denoised prediction), `sampling_prepare/cleanup`, `unet.model`, `vae.decode_tiled`. Actual user's Forge remains outside scope until P07.
+- P03 will provide a bounded offline SDXL-compatible Euler (ODE) path with explicit sigma/model capability preflight. It will **not** imply arbitrary Forge sampler, SDXL accelerated/RF, Anima, P04 semantic coherence, P06 regional conditioning or real VRAM quality verification.
+
+### Concrete implementation plan — recorded before code
+- [ ] Introduce real torch tensor tile geometry/planner in image and latent coordinates, overlapping positive write weights, optional clipped context halo, deterministic ordering and full coverage preflight; fail closed on misalignment, size/memory-limit or unsupported latent geometry.
+- [ ] Implement CPU-resident single seeded global Gaussian field and full-canvas synchronized `x0` accumulation: every tile predicts from a frozen full-state snapshot, transfer only its halo crop to the requested inference device, accumulate on CPU in float32, then perform **one** Euler update over the whole canvas per sigma interval; no per-tile noise/solver/step history. Validate tensor shape/finiteness and time/schedule semantics.
+- [ ] Build an explicit Forge Neo SDXL adapter with source-backed `sampling_function_inner`, conditioning contract, memory-management prepare/cleanup and host tiled VAE decode (through Forge's `vae.decode_tiled` and latent scaling). Fail on unsupported inpainting/RF/predictors/active ControlNet/regional state rather than silently discarding capabilities; never alter existing model/encoder or patch global Forge functions.
+- [ ] Ensure interruption, OOM, bad prediction and failures release per-window/device state and call adapter cleanup via `finally`; retain untouched input on failure and expose bounded step/window/CPU-residency telemetry with no fabricated memory numbers.
+- [ ] Add offline torch-backed synthetic fixtures for tile geometry and border coverage, halo correctness, frozen-state stability, order independence, reference untiled equality (local pointwise predictor), one solver update per step, multi-step global sigmas, seeded determinism, failure/interrupt and cleanup, fake Forge SDXL interface + decode contracts; add CPU tests to CI with pinned lightweight CPU torch install.
+- [ ] Document precise supported settings / deferred P04–P07 integration and run candidate-head CI (Python/torch and existing Chromium + isolated Gradio). Publish PR, merge only when all offline P03 acceptance evidence passes; update this tracker accurately. **Do not start P04.**
