@@ -69,6 +69,7 @@ class SynchronizedSDXLTests(unittest.TestCase):
         self.assertEqual(len(result.steps), 1)
         self.assertEqual(result.steps[0].windows, len(calls))
         self.assertGreater(result.cpu_workspace_estimate_bytes, 0)
+        self.assertIs(result.plan, self.plan)
 
     def test_identical_one_tile(self):
         p = self.TilePlan.build(64, 48, 128, 16, 8)
@@ -260,6 +261,34 @@ class ForgeSDXLBridgeTests(unittest.TestCase):
         unet.controlnet_linked_list=object()
         with self.assertRaises(self.UnsupportedSDXL):
             self.ForgeSDXL.from_prompts(self.host,self.plan,prompt="",negative_prompt="",cfg=1,seed=1)
+
+    def test_adapter_oom_retile_replays_global_seed_and_cleans(self):
+        from coherent_diffusion.scheduler import TilePlan
+        big = TilePlan.build(64, 64, 64, 16, 16)
+        bridge = self.ForgeSDXL.from_prompts(self.host, big, prompt="x",
+                                             negative_prompt="", cfg=2., seed=777, device="cpu")
+        mod = sys.modules["backend.sampling.sampling_function"]
+        attempt = [0]
+        def fragile(model, crop, t, negative, positive, cfg, opts, seed):
+            attempt[0] += 1
+            if attempt[0] == 1:
+                raise MemoryError("simulated window oom")
+            return crop * .25 + 1
+        mod.sampling_function_inner = fragile
+        out = bridge.run([1., 0.], min_tile_px=16, max_retiles=2)
+        self.assertEqual(out.plan.tile_px, 32)
+        self.assertEqual(len([c for c in self.calls if c[0]=="prepare"]), 2)
+        self.assertEqual(len([c for c in self.calls if c[0]=="cleanup"]), 2)
+        from coherent_diffusion.scheduler import seeded_noise
+        baseline = seeded_noise(out.plan, 777, sigma=1.)
+        self.assertTrue(torch.allclose(out.latent, baseline * .25 + 1, atol=1e-6))
+
+    def test_preflight_budget_does_not_load_model(self):
+        bridge=self.ForgeSDXL.from_prompts(self.host,self.plan,prompt="x",
+                                            negative_prompt="",cfg=2,seed=2,device="cpu")
+        with self.assertRaises(MemoryError):
+            bridge.run([1.,0.],max_cpu_bytes=1)
+        self.assertNotIn("prepare",[c[0] for c in self.calls])
 
     def test_adapter_cleans_on_denoiser_failure(self):
         bridge=self.ForgeSDXL.from_prompts(self.host,self.plan,prompt="x",negative_prompt="",cfg=2,seed=1,device="cpu")
