@@ -144,6 +144,7 @@ class RunResult:
     steps: tuple[StepInfo, ...]
     cpu_workspace_estimate_bytes: int  # estimate, NOT measured peak CPU/GPU memory
     max_window_latent_bytes: int        # geometry estimate only
+    plan: TilePlan                       # effective geometry, including retries
 
 
 def _validate_schedule(sigmas) -> tuple[float, ...]:
@@ -243,7 +244,7 @@ def synchronized_euler(plan: TilePlan, latent: torch.Tensor, sigmas,
             infos.append(info)
             if progress is not None:
                 progress(info)
-        return RunResult(state, tuple(infos), workspace_bytes, max_tile_bytes)
+        return RunResult(state, tuple(infos), workspace_bytes, max_tile_bytes, plan)
     finally:
         if cleanup is not None:
             cleanup()
