@@ -189,7 +189,11 @@ class EvidenceTests(unittest.TestCase):
         scr.Script=type("Script",(object,),{})
         scr.AlwaysVisible=object()
         mod.scripts=scr
-        with mock.patch.dict(sys.modules,{"gradio":gr,"modules":mod,"modules.scripts":scr}):
+        callbacks=types.ModuleType("modules.script_callbacks")
+        callbacks.on_ui_tabs=lambda fn:setattr(callbacks,"editor_tab",fn)
+        mod.script_callbacks=callbacks
+        gr.Blocks=lambda **kwargs:Context()
+        with mock.patch.dict(sys.modules,{"gradio":gr,"modules":mod,"modules.scripts":scr,"modules.script_callbacks":callbacks}):
             spec=importlib.util.spec_from_file_location("cd_probe_script",HERE.parent/"scripts/coherent_diffusion.py")
             instance=importlib.util.module_from_spec(spec)
             spec.loader.exec_module(instance)
@@ -197,6 +201,8 @@ class EvidenceTests(unittest.TestCase):
             self.assertIs(script.show(False),scr.AlwaysVisible)
             self.assertFalse(script.show(True))
             self.assertEqual(script.ui(False),[True])
+            tabs=callbacks.editor_tab()
+            self.assertEqual(tabs[0][1:],("Coherent Diffusion","coherent_diffusion"))
             script.process(types.SimpleNamespace(sd_model=None),True)
             self.assertFalse(instance.probe_ui()["model_loaded"])
 
