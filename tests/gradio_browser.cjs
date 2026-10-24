@@ -21,7 +21,7 @@ const assert=require('node:assert/strict');
    const errors=[];
    page.on('pageerror',e=>errors.push(e.message));
    await page.goto(url,{waitUntil:'domcontentloaded'});
-   await page.getByText('Coherent Diffusion — regional composition editor (P02)').first().click();
+   await page.getByText('Coherent Diffusion', {exact:true}).first().click();
    const frame=page.frameLocator('iframe[title="Coherent Diffusion region editor"]');
    await frame.locator('#layerList .layer').first().waitFor({timeout:20000});
    assert.equal(await frame.locator('#layerList .layer').count(),5,'P02 editor mounted under Gradio');
