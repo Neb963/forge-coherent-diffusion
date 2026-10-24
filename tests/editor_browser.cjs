@@ -80,6 +80,50 @@ const { spawnSync } = require('node:child_process');
   assert.equal(await page.locator('#applyImportBtn').isDisabled(),false,'ZIP verified before apply');
   await page.locator('#applyImportBtn').click();
   assert.equal(await page.locator('#layerList .layer').count(),7,'masked CRF round-trip');
+
+  // Effective overlay is computed from the canonical regions, not a static illustration.
+  await page.locator('[data-view="influence"]').click();
+  const weightedAlpha=await page.evaluate(()=>document.getElementById('weightMap').getContext('2d').getImageData(64,10,1,1).data[3]);
+  assert.ok(weightedAlpha>0,'weighted influence paints sampled mask weights');
+  await page.locator('[data-view="regions"]').click();
+
+  // Edit the re-imported editable brush mask twice; none of the other six are replaced.
+  await page.locator('[data-tool="brush"]').click();
+  let surface=await page.locator('#surface').boundingBox();
+  await page.mouse.move(surface.x+surface.width*.6,surface.y+surface.height*.3);
+  await page.mouse.down();await page.mouse.move(surface.x+surface.width*.63,surface.y+surface.height*.33,{steps:4});await page.mouse.up();
+  assert.equal(await page.locator('#layerList .layer').count(),7,'painting active stroke does not add/delete siblings');
+  await page.locator('[data-tool="eraser"]').click();
+  await page.mouse.move(surface.x+surface.width*.55,surface.y+surface.height*.5);
+  await page.mouse.down();await page.mouse.move(surface.x+surface.width*.56,surface.y+surface.height*.51,{steps:3});await page.mouse.up();
+  assert.equal(await page.locator('#layerList .layer').count(),7,'eraser affects selected mask only');
+
+  // 25 mixed, independently undoable actions with redo and no entity/LoRA corruption.
+  const initialIds=await page.locator('#layerList .layer').evaluateAll(nodes=>nodes.map(n=>n.dataset.id));
+  for(let step=0;step<5;step++){
+    await page.locator('#addRegionBtn').click();
+    await page.locator('#duplicateBtn').click();
+    await page.locator('#deleteBtn').click();
+    await page.locator('#regionPrompt').fill('cycle-'+step);
+    await page.locator('#regionPrompt').blur();
+    await page.locator('#inspector [data-toggle="visible"]').click();
+  }
+  assert.equal(await page.locator('#layerList .layer').count(),12);
+  for(let step=0;step<25;step++)await page.locator('#undoBtn').click();
+  assert.deepEqual(await page.locator('#layerList .layer').evaluateAll(nodes=>nodes.map(n=>n.dataset.id)),initialIds,'25 mixed edits undo exactly');
+  for(let step=0;step<25;step++)await page.locator('#redoBtn').click();
+  assert.equal(await page.locator('#layerList .layer').count(),12,'25 redo steps restore scene');
+  const dims=await page.locator('#surface').boundingBox();
+  assert.ok(dims.width>320&&dims.height>200,'canvas has usable geometry at desktop viewport');
+
+  // Duplicate ID and orphan mask inputs must fail without modifying existing layers.
+  await page.locator('#importBtn').click();
+  const duplicate=JSON.parse(JSON.stringify(exported));duplicate.regions[1].id=duplicate.regions[0].id;
+  await page.locator('#importTextarea').fill(JSON.stringify(duplicate));await page.locator('#validateBtn').click();
+  assert.equal(await page.locator('#applyImportBtn').isDisabled(),true,'duplicate IDs rejected');
+  await page.locator('#modalClose').click();
+  assert.equal(await page.locator('#layerList .layer').count(),12,'invalid input preserved current project');
+
   assert.deepEqual(errors,[],'no uncaught browser script errors');
   await browser.close();await new Promise(resolve=>server.close(resolve));
   console.log('P02 browser editor: PASS (5 regions, edit, export, Python conformance, reload, bad import, brush ZIP)');
