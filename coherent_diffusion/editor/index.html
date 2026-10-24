@@ -187,16 +187,128 @@ function surfaceMove(e){const p=localPos(e);$('coordinateReadout').textContent=`
 function surfaceUp(){if(!interaction)return;const ix=interaction;interaction=null;if(ix.type==='box-drawing'){const [a,b]=[ix.start,ix.current];const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]),w=Math.abs(a[0]-b[0]),h=Math.abs(a[1]-b[1]);if(w>.012&&h>.012){newRegion({type:'bbox',bbox:[x,y,w,h]},'New rectangle');pushUndo(ix.before);setTool('select');render();toast('Rectangle added')}else renderOverlay();return}if(ix.before)pushUndo(ix.before);if(['move','resize','vertex','brush','eraser'].includes(ix.type))render()}
 function finishPolygon(){if(polygonDraft.length<3){polygonDraft=[];renderOverlay();return}const before=interaction?.before||snapshot();newRegion({type:'polygon',points:polygonDraft.slice()},'New polygon');polygonDraft=[];interaction=null;pushUndo(before);setTool('select');render();toast('Polygon region added')}
 function transformBounds(r,newBB){const old=getBounds(r);if(r.geometry.type==='bbox'){r.geometry.bbox=newBB;return}const [ox,oy,ow,oh]=old,[nx,ny,nw,nh]=newBB;const sx=ow>1e-6?nw/ow:1,sy=oh>1e-6?nh/oh:1;r.geometry.points=(r.geometry.points||[]).map(p=>p?[clamp(nx+(p[0]-ox)*sx),clamp(ny+(p[1]-oy)*sy)]:null)}
-function exportDocument(){return{format:'coherent-regions',version:1,canvas:cp(scene.canvas),global:cp(scene.global),blend:cp(scene.blend),entities:cp(scene.entities||[]),regions:scene.regions.map(r=>({id:r.id,name:r.name,geometry:cp(r.geometry),prompt:r.prompt,negative_prompt:r.negative_prompt,inherit_style:r.inherit_style,enabled:r.enabled,visible:r.visible,blend:cp(r.blend),loras:cp(r.loras),ui:{color:r.color,display_opacity:r.display_opacity,locked:r.locked}}))}}
-function downloadJSON(){const raw=JSON.stringify(exportDocument(),null,2),blob=new Blob([raw],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='coherent-regions-scene.crf.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('CRF file exported','', 'Local JSON download · no model call')}
-async function copyJSON(){const txt=JSON.stringify(exportDocument(),null,2);try{await navigator.clipboard.writeText(txt);toast('CRF JSON copied')}catch(e){openImport();$('importTextarea').value=txt;toast('Clipboard unavailable; JSON placed in import editor',true)}}
-function stripFence(text){const t=text.trim(),m=t.match(/^```(?:json|crf)?\s*\n([\s\S]*?)\n```\s*$/i);return m?m[1]:t}
-function validateCRF(input){if(input.length>1048576)throw Error('JSON input exceeds 1 MB. Use file import for large mask assets.');const obj=JSON.parse(stripFence(input));if(!obj||obj.format!=='coherent-regions'||obj.version!==1)throw Error('Expected format "coherent-regions" and version 1.');if(!obj.canvas||![obj.canvas.width,obj.canvas.height].every(x=>Number.isInteger(x)&&x>0&&x<=16384))throw Error('Invalid canvas width/height.');if(!Array.isArray(obj.regions)||obj.regions.length>128)throw Error('Expected up to 128 regions.');const ids=new Set();for(const r of obj.regions){if(!r.id||typeof r.id!=='string'||ids.has(r.id))throw Error('Every region needs a unique nonempty ID.');ids.add(r.id);const g=r.geometry;if(!g||!['bbox','polygon','stroke'].includes(g.type))throw Error(`Region ${r.id}: unsupported geometry.`);if(g.type==='bbox'){if(!Array.isArray(g.bbox)||g.bbox.length!==4||!g.bbox.every(x=>Number.isFinite(x)&&x>=0&&x<=1)||g.bbox[2]<=0||g.bbox[3]<=0||g.bbox[0]+g.bbox[2]>1.000001||g.bbox[1]+g.bbox[3]>1.000001)throw Error(`Region ${r.id}: invalid normalized bbox.`)}else{if(!Array.isArray(g.points)||g.points.length<(g.type==='polygon'?3:1)||g.points.length>20000||!g.points.every(p=>g.type==='stroke'&&p===null||Array.isArray(p)&&p.length===2&&p.every(x=>Number.isFinite(x)&&x>=0&&x<=1)))throw Error(`Region ${r.id}: invalid normalized points.`)}if(r.loras&&!Array.isArray(r.loras))throw Error(`Region ${r.id}: loras must be an array.`)}return obj}
+function strictParseCRF(raw){
+ if(typeof raw!=='string'||new TextEncoder().encode(raw).length>1048576)throw Error('CRF JSON exceeds 1 MiB');
+ const text=stripFence(raw), n=text.length;let i=0;
+ const ws=()=>{while(i<n && /\s/.test(text[i]))i++};
+ function str(){let start=i++;for(;i<n;i++){if(text[i]==='\\'){i++;continue}if(text[i]==='"'){i++;return JSON.parse(text.slice(start,i))}}throw Error('Unterminated JSON string')}
+ function val(depth){if(depth>32)throw Error('JSON depth limit exceeded');ws();const c=text[i];
+ if(c==='{'){i++;ws();const keys=new Set();if(text[i]==='}'){i++;return}while(true){ws();if(text[i]!=='"')throw Error('JSON object key required');let key=str();if(keys.has(key))throw Error('Duplicate JSON key: '+key);keys.add(key);ws();if(text[i++]!==':')throw Error('JSON colon required');val(depth+1);ws();const k=text[i++];if(k==='}')break;if(k!==',')throw Error('Malformed JSON object')}}
+ else if(c==='['){i++;ws();if(text[i]===']'){i++;return}while(true){val(depth+1);ws();const k=text[i++];if(k===']')break;if(k!==',')throw Error('Malformed JSON array')}}
+ else if(c==='"'){str()}
+ else{let rem=text.slice(i),m=/^(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(rem);if(!m)throw Error('Malformed JSON value');i+=m[0].length}}
+ val(0);ws();if(i!==n)throw Error('Trailing JSON content');
+ return JSON.parse(text);
+}
+function validPolygon(pts,id){
+ if(!Array.isArray(pts)||pts.length<3||pts.length>128||!pts.every(p=>Array.isArray(p)&&p.length===2&&p.every(x=>typeof x==='number'&&Number.isFinite(x)&&x>=0&&x<=1)))throw Error(id+': invalid polygon vertices');
+ let area=Math.abs(pts.reduce((s,p,i)=>{let q=pts[(i+1)%pts.length];return s+p[0]*q[1]-q[0]*p[1]},0)/2);
+ if(area<1e-6)throw Error(id+': polygon too small');
+ const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+ const on=(a,b,p)=>Math.abs(cross(a,b,p))<=1e-9&&p.every((q,j)=>q>=Math.min(a[j],b[j])-1e-9&&q<=Math.max(a[j],b[j])+1e-9);
+ const intersect=(a,b,c,d)=>{let x=cross(a,b,c),y=cross(a,b,d),z=cross(c,d,a),w=cross(c,d,b);return ((x>1e-9&&y< -1e-9||x< -1e-9&&y>1e-9)&&(z>1e-9&&w< -1e-9||z< -1e-9&&w>1e-9))||on(a,b,c)||on(a,b,d)||on(c,d,a)||on(c,d,b)};
+ for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){if(j===(i+1)%pts.length||i===(j+1)%pts.length)continue;if(intersect(pts[i],pts[(i+1)%pts.length],pts[j],pts[(j+1)%pts.length]))throw Error(id+': self-intersecting polygon')}
+}
+function validateCRF(input){
+ const obj=typeof input==='string'?strictParseCRF(input):input;
+ const fail=s=>{throw Error(s)};
+ const plain=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+ const allowed=(x,keys,req=[],name='object')=>{if(!plain(x))fail(name+' must be an object');for(const k of Object.keys(x))if(!keys.includes(k))fail(name+': unknown key '+k);for(const k of req)if(!(k in x))fail(name+': missing '+k)};
+ const numeric=(v,a,b)=>typeof v==='number'&&Number.isFinite(v)&&v>=a&&v<=b;
+ const id=v=>typeof v==='string'&&/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(v);
+ const ext=x=>{if(x===undefined)return; if(!plain(x)||Object.keys(x).length>32||Object.keys(x).some(k=>!(/^[a-zA-Z0-9_.-]{1,64}$/.test(k))))fail('Invalid extensions namespace')};
+ allowed(obj,['format','version','canvas','global','blend','entities','regions','assets','extensions'],['format','version','canvas','global','blend','regions'],'CRF');
+ if(obj.format!=='coherent-regions'||obj.version!==1)fail('Expected coherent-regions version 1');
+ ext(obj.extensions);
+ allowed(obj.canvas,['width','height','coordinate_system','aspect_policy','extensions'],['width','height','coordinate_system','aspect_policy'],'canvas');
+ for(const dim of ['width','height'])if(!Number.isInteger(obj.canvas[dim])||!numeric(obj.canvas[dim],64,16384))fail('Invalid canvas '+dim);
+ if(obj.canvas.coordinate_system!=='normalized_top_left'||!['preserve_relative','fit_letterbox','explicit_reproject'].includes(obj.canvas.aspect_policy))fail('Unsupported canvas coordinates/aspect policy');
+ ext(obj.canvas.extensions);
+ allowed(obj.global,['scene_prompt','style_prompt','negative_prompt','base_weight','extensions'],['scene_prompt','style_prompt','base_weight'],'global');
+ for(const k of ['scene_prompt','style_prompt'])if(typeof obj.global[k]!=='string'||obj.global[k].length>4096)fail('Invalid global '+k);
+ if(obj.global.negative_prompt!==undefined&&obj.global.negative_prompt!==null&&(typeof obj.global.negative_prompt!=='string'||obj.global.negative_prompt.length>4096))fail('Invalid global negative_prompt');
+ if(!numeric(obj.global.base_weight,0,100))fail('Invalid global base_weight');ext(obj.global.extensions);
+ allowed(obj.blend,['policy','extensions'],['policy'],'blend');if(!['weighted','priority'].includes(obj.blend.policy))fail('Invalid blend policy');ext(obj.blend.extensions);
+ if(!Array.isArray(obj.regions)||obj.regions.length>128)fail('Expected up to 128 regions');
+ const ids=new Set(), loraIds=new Set(), maskRefs=new Set();
+ for(const r of obj.regions){
+ allowed(r,['id','name','geometry','prompt','negative_prompt','inherit_style','enabled','visible','locked','blend','loras','extensions'],['id','geometry','blend'],'region');
+ if(!id(r.id)||ids.has(r.id))fail('Invalid/duplicate region ID: '+r.id);ids.add(r.id);
+ if(r.name!==undefined&&(typeof r.name!=='string'||r.name.length>128))fail(r.id+': invalid name');
+ for(const k of ['prompt','negative_prompt'])if(r[k]!==undefined&&r[k]!==null&&(typeof r[k]!=='string'||r[k].length>4096))fail(r.id+': invalid '+k);
+ for(const k of ['inherit_style','enabled','visible','locked'])if(r[k]!==undefined&&typeof r[k]!=='boolean')fail(r.id+': invalid '+k);
+ ext(r.extensions);
+ const g=r.geometry;
+ if(!plain(g)||!['bbox','polygon','mask'].includes(g.type))fail(r.id+': unsupported geometry');
+ if(g.type==='bbox'){allowed(g,['type','bbox','extensions'],['type','bbox'],'geometry');if(!Array.isArray(g.bbox)||g.bbox.length!==4||!g.bbox.every(v=>numeric(v,0,1))||g.bbox[2]*g.bbox[3]<1e-6||g.bbox[2]<=0||g.bbox[3]<=0||g.bbox[0]+g.bbox[2]>1+1e-9||g.bbox[1]+g.bbox[3]>1+1e-9)fail(r.id+': invalid bbox')}
+ else if(g.type==='polygon'){allowed(g,['type','points','extensions'],['type','points'],'geometry');validPolygon(g.points,r.id)}
+ else{allowed(g,['type','asset_id','interpolation','extensions'],['type','asset_id'],'geometry');if(!id(g.asset_id)||g.interpolation!==undefined&&!['nearest','bilinear'].includes(g.interpolation))fail(r.id+': invalid mask reference');maskRefs.add(g.asset_id)}
+ ext(g.extensions);
+ allowed(r.blend,['weight','feather_px','z_index','extensions'],['weight','feather_px','z_index'],'region.blend');
+ if(!numeric(r.blend.weight,0,100)||!numeric(r.blend.feather_px,0,4096)||!Number.isInteger(r.blend.z_index)||!numeric(r.blend.z_index,-10000,10000))fail(r.id+': invalid blending');
+ ext(r.blend.extensions);
+ if(r.loras!==undefined){if(!Array.isArray(r.loras)||r.loras.length>16)fail(r.id+': invalid LoRA list');for(const a of r.loras){
+ allowed(a,['id','name','hash','weight','te_weight','scope','requested_isolation','extensions'],['id','name','weight','scope','requested_isolation'],'LoRA');
+ if(!id(a.id)||loraIds.has(a.id))fail('Duplicate/invalid LoRA ID');loraIds.add(a.id);
+ if(!/^[a-zA-Z0-9_. -]{1,128}$/.test(a.name)||a.name.includes('..')||!numeric(a.weight,-2,2)||a.te_weight!==undefined&&a.te_weight!==null&&!numeric(a.te_weight,-2,2)||a.hash!==undefined&&!/^[a-f0-9]{64}$/.test(a.hash)||a.scope!=='regional'||!['approximate','prediction','experimental_internal'].includes(a.requested_isolation))fail(r.id+': invalid LoRA reference');
+ ext(a.extensions);
+ }}}
+ const eids=new Set();if(obj.entities!==undefined){if(!Array.isArray(obj.entities)||obj.entities.length>128)fail('Invalid entities');for(const e of obj.entities){
+ allowed(e,['id','description','count','region_ids','relations','extensions'],['id','description','count','region_ids'],'entity');
+ if(!id(e.id)||eids.has(e.id)||typeof e.description!=='string'||e.description.length>4096||!Number.isInteger(e.count)||!numeric(e.count,1,50)||!Array.isArray(e.region_ids)||!e.region_ids.length||e.region_ids.length>128||new Set(e.region_ids).size!==e.region_ids.length||e.region_ids.some(x=>!ids.has(x)))fail('Invalid entity/references');eids.add(e.id);ext(e.extensions);
+ if(e.relations!==undefined&&(!Array.isArray(e.relations)||e.relations.length>32||e.relations.some(s=>typeof s!=='string'||s.length>4096)))fail('Invalid entity relations');
+ }}
+ const assetIds=new Set(), assetPaths=new Set();
+ if(obj.assets!==undefined){if(!Array.isArray(obj.assets)||obj.assets.length>128)fail('Invalid assets');for(const a of obj.assets){
+ allowed(a,['id','path','sha256','media_type','width','height','extensions'],['id','path','sha256','media_type','width','height'],'asset');
+ if(!id(a.id)||assetIds.has(a.id)||typeof a.path!=='string'||a.path.length>256||!/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(a.path)||a.path.split('/').some(p=>p==='.'||p==='..')||a.path.split('/').length>8||assetPaths.has(a.path)||!(/^[a-f0-9]{64}$/.test(a.sha256))||!['image/png','image/webp'].includes(a.media_type)||!Number.isInteger(a.width)||!numeric(a.width,1,16384)||!Number.isInteger(a.height)||!numeric(a.height,1,16384))fail('Invalid/unsafe asset');
+ assetIds.add(a.id);assetPaths.add(a.path);ext(a.extensions);
+ }}
+ if(maskRefs.size!==assetIds.size||[...maskRefs].some(k=>!assetIds.has(k)))fail('Mask assets missing or orphaned');
+ if(obj.global.base_weight===0&&!obj.regions.some(r=>r.enabled!==false&&r.blend.weight>0&&r.geometry.type==='bbox'&&r.geometry.bbox.every((x,i)=>Math.abs(x-[0,0,1,1][i])<=1e-9)))fail('Zero global base needs enabled full canvas coverage');
+ return obj;
+}
+function exportDocument(){
+ const regions=scene.regions.map(r=>{
+  const geometry=cp(r.geometry);
+  if(geometry.type==='stroke'){const aid='mask-'+r.id;geometry.type='mask';geometry.asset_id=aid;geometry.extensions={'cd.editable_stroke':cp(r.geometry)};delete geometry.points;delete geometry.brush_width}
+  const out={id:r.id,geometry,blend:cp(r.blend),extensions:{...cp(r.extensions||{}),'cd.color':r.color,'cd.opacity':r.display_opacity,'cd.locked':!!r.locked}};
+  for(const k of ['name','prompt','negative_prompt','inherit_style','enabled','visible','loras'])if(Object.prototype.hasOwnProperty.call(r,k))out[k]=cp(r[k]);
+  return out;
+ });
+ const doc={format:'coherent-regions',version:1,canvas:cp(scene.canvas),global:cp(scene.global),blend:cp(scene.blend),regions};
+ if(scene.entities?.length)doc.entities=cp(scene.entities);
+ if(scene.assets?.length)doc.assets=cp(scene.assets);
+ if(scene.extensions)doc.extensions=cp(scene.extensions);
+ return doc;
+}
 function previewCRF(obj){
  const shape=(r,i)=>{const g=r.geometry,c=colors[i%colors.length],fill=`fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="2"`;if(g.type==='bbox'){const [x,y,w,h]=g.bbox;return `<rect x="${x*800}" y="${y*320}" width="${w*800}" height="${h*320}" ${fill}/>`}if(g.type==='polygon')return `<polygon points="${g.points.map(p=>`${p[0]*800},${p[1]*320}`).join(' ')}" ${fill}/>`;return `<path d="${(g.points||[]).map((p,i)=>p?`${i?'L':'M'}${p[0]*800} ${p[1]*320}`:'').join(' ')}" fill="none" stroke="${c}" stroke-width="7"/>`};
  return `<div style="border:1px solid #454e63;border-radius:10px;overflow:hidden;background:#182735;margin-top:12px"><div style="display:flex;justify-content:space-between;padding:8px 11px;background:#202735;color:#bbc6d6;font-size:10px"><span>IMPORT PREVIEW · NORMALIZED REGIONS</span><span>${obj.canvas.width} × ${obj.canvas.height}</span></div><svg viewBox="0 0 800 320" preserveAspectRatio="none" style="width:100%;height:170px;display:block;background:linear-gradient(180deg,#639aaf 0%,#9abfc6 43%,#467985 44%,#49898a 78%,#b9ab96 79%)">${obj.regions.map(shape).join('')}</svg></div>`
 }
-function importScene(obj,mode='replace'){mutate(()=>{const normalized=obj.regions.map((r,i)=>({...r,name:r.name||r.id,prompt:r.prompt||'',negative_prompt:r.negative_prompt||'',inherit_style:r.inherit_style!==false,enabled:r.enabled!==false,visible:r.visible!==false,locked:r.ui?.locked||false,display_opacity:Number(r.ui?.display_opacity??.27),color:/^#[0-9a-fA-F]{6}$/.test(r.ui?.color||'')?r.ui.color:colors[i%colors.length],blend:{weight:Number(r.blend?.weight??1),feather_px:Number(r.blend?.feather_px??24),z_index:Number(r.blend?.z_index??10+i)},loras:r.loras||[]}));if(mode==='replace'){scene={canvas:cp(obj.canvas),global:{scene_prompt:'',style_prompt:'',negative_prompt:'',base_weight:.25,...obj.global},blend:{policy:'weighted',...obj.blend},entities:obj.entities||[],regions:normalized};selected=scene.regions.at(-1)?.id||null}else{const names=new Set(scene.regions.map(x=>x.id));for(const r of normalized){if(names.has(r.id))r.id=rid();scene.regions.push(r)}selected=normalized.at(-1)?.id||selected}});fit();setView('regions');setNav('editor')}
+function importScene(obj,mode='replace',maskData={}){
+ const normalized=obj.regions.map((r,i)=>{
+  const meta=r.extensions||{};
+  let geo=cp(r.geometry);
+  const st=geo.type==='mask'&&geo.extensions?.['cd.editable_stroke'];
+  if(st&&st.type==='stroke'&&Array.isArray(st.points)&&st.points.length<=20000&&st.points.every(p=>p===null||Array.isArray(p)&&p.length===2&&p.every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1))&&typeof st.brush_width==='number'&&st.brush_width>0&&st.brush_width<=.25)geo=cp(st);
+  return{...cp(r),geometry:geo,name:r.name??r.id,inherit_style:r.inherit_style!==false,enabled:r.enabled!==false,visible:r.visible!==false,locked:meta['cd.locked']===true,display_opacity:typeof meta['cd.opacity']==='number'?clamp(meta['cd.opacity']):.27,color:/^#[0-9a-fA-F]{6}$/.test(meta['cd.color']||'')?meta['cd.color']:colors[i%colors.length],loras:cp(r.loras||[])};
+ });
+ const old=snapshot();
+ if(mode==='replace'){scene={canvas:cp(obj.canvas),global:cp(obj.global),blend:cp(obj.blend),entities:cp(obj.entities||[]),regions:normalized,assets:cp(obj.assets||[]),maskData:cp(maskData),extensions:cp(obj.extensions||{})};selected=scene.regions.at(-1)?.id||null}
+ else{
+  const seen=new Set(scene.regions.map(x=>x.id)),map={};
+  for(const r of normalized){let original=r.id;while(seen.has(r.id))r.id=rid();map[original]=r.id;seen.add(r.id);for(const a of r.loras){while(scene.regions.some(x=>x.loras?.some(y=>y.id===a.id)))a.id=rid()}}
+  const existingAssets=new Set((scene.assets||[]).map(x=>x.id));
+  const incomingAssets=cp(obj.assets||[]);
+  for(const a of incomingAssets){const orig=a.id;while(existingAssets.has(a.id))a.id=rid();existingAssets.add(a.id);for(const r of normalized)if(r.geometry.type==='mask'&&r.geometry.asset_id===orig)r.geometry.asset_id=a.id;if(maskData[orig]){maskData[a.id]=maskData[orig];delete maskData[orig]}}
+  const incomingEntities=cp(obj.entities||[]),existingEntities=new Set((scene.entities||[]).map(e=>e.id));
+  for(const e of incomingEntities){e.region_ids=e.region_ids.map(id=>map[id]||id);while(existingEntities.has(e.id))e.id=rid();existingEntities.add(e.id)}
+  scene.regions.push(...normalized);scene.entities=(scene.entities||[]).concat(incomingEntities);scene.assets=(scene.assets||[]).concat(incomingAssets);scene.maskData={...(scene.maskData||{}),...maskData};
+  selected=normalized.at(-1)?.id||selected;
+ }
+ pushUndo(old);fit();setView('regions');setNav('editor');render();
+}
 function openModal(title,body,actions,note='P02 editor only · generation backend unavailable'){ $('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modalActions').innerHTML=actions;$('modalFooterNote').textContent=note;$('modalScreen').classList.add('open')}
 function closeModal(){$('modalScreen').classList.remove('open');previewImport=null}
 function exampleCRF(){return JSON.stringify(exportDocument(),null,2)}
