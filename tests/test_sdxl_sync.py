@@ -214,8 +214,11 @@ class ForgeSDXLBridgeTests(unittest.TestCase):
             calls.append(("predict", tuple(crop.shape), float(t[0]), cfg, seed))
             return crop * .25 + 1
         sampling.sampling_function_inner = fake_inner
+        backend = types.ModuleType("backend")
+        backend.memory_management = types.SimpleNamespace(
+            is_oom=lambda error: isinstance(error, RuntimeError) and str(error) == "forge-classified-oom")
         self.patches = patch.dict(sys.modules, {
-            "backend": types.ModuleType("backend"),
+            "backend": backend,
             "backend.sampling": types.ModuleType("backend.sampling"),
             "backend.sampling.condition": cond,
             "backend.sampling.sampling_function": sampling,
@@ -309,6 +312,26 @@ class ForgeSDXLBridgeTests(unittest.TestCase):
         from coherent_diffusion.scheduler import seeded_noise
         baseline = seeded_noise(out.plan, 777, sigma=1.)
         self.assertTrue(torch.allclose(out.latent, baseline * .25 + 1, atol=1e-6))
+
+    def test_uses_host_oom_classifier_without_retrying_general_errors(self):
+        from coherent_diffusion.scheduler import TilePlan
+        from coherent_diffusion.forge_bridge.sdxl import _host_oom
+        self.assertTrue(_host_oom(RuntimeError("forge-classified-oom")))
+        self.assertFalse(_host_oom(RuntimeError("other failure")))
+        bridge = self.ForgeSDXL.from_prompts(
+            self.host, TilePlan.build(64,64,64,16,16), prompt="x",
+            negative_prompt="",cfg=1,seed=9,device="cpu")
+        mod = sys.modules["backend.sampling.sampling_function"]
+        seen = [0]
+        def denoise(*args):
+            seen[0] += 1
+            if seen[0] == 1:
+                raise RuntimeError("forge-classified-oom")
+            return args[1] * .5
+        mod.sampling_function_inner = denoise
+        result = bridge.run([1.,0.],min_tile_px=16)
+        self.assertEqual(result.plan.tile_px,32)
+        self.assertGreater(seen[0],1)
 
     def test_preflight_budget_does_not_load_model(self):
         bridge=self.ForgeSDXL.from_prompts(self.host,self.plan,prompt="x",
