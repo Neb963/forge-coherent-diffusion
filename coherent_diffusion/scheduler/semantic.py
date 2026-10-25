@@ -147,8 +147,9 @@ def compile_routes(doc: dict, plan: TilePlan, *, mode: str = "manual") -> Routin
     """Compile deterministic non-mutating *advisory* prompt routing for P04.
 
     manual: explicit regions and entities;
-    automatic: unlocated conservative count proposals, never fake masks;
-    hybrid: authored regions plus the same unlocated proposals.
+    automatic: route only unambiguous noun-to-authored-region matches;
+    hybrid: authored regions plus such conservative automatic matches.
+    Unmatched proposals stay explicitly unlocated; never fake a position.
     """
     if mode not in ("manual", "automatic", "hybrid"):
         raise ValueError("Routing mode must be manual, automatic or hybrid")
@@ -176,9 +177,41 @@ def compile_routes(doc: dict, plan: TilePlan, *, mode: str = "manual") -> Routin
                   max(b[2] for b in boxes), max(b[3] for b in boxes))
         entities.append(EntityPlacement(entity["id"], entity["description"],
                                         entity["count"], ids, bounds))
+    matched_regions = set()
+    unresolved = []
+    for proposal in (_automatic_proposals(scene) if mode in ("automatic", "hybrid") else ()):
+        noun = proposal.phrase.split()[-1].lower()
+        candidates = [r for r in enabled if r["id"].lower() == noun
+                      or r.get("name", "").lower() == noun]
+        if len(candidates) != 1:
+            unresolved.append(proposal)
+            continue
+        found = candidates[0]
+        rid = found["id"]
+        if found["geometry"]["type"] == "mask":
+            warnings.append("Automatic match " + noun + " requires a verified P06 mask asset")
+            unresolved.append(proposal)
+            continue
+        matched_regions.add(rid)
+        existing = [e for e in entities if rid in e.region_ids]
+        if existing:
+            if any(e.count != proposal.count for e in existing):
+                warnings.append("Count proposal conflicts with authored entity at " + rid
+                                + "; authored count retained")
+        else:
+            new_id = "auto." + noun
+            if any(e.id == new_id for e in entities):
+                unresolved.append(proposal)
+                continue
+            r_bounds = _bounds(found["geometry"])
+            entities.append(EntityPlacement(new_id, proposal.phrase,
+                                            proposal.count, (rid,), r_bounds))
+        warnings.append("Automatic match " + noun + " uses pre-authored region "
+                        + rid + ", not inferred placement")
     if mode == "automatic":
-        warnings.append("Automatic parsing makes unlocated suggestions only; no speculative tile assignments")
-    proposals = _automatic_proposals(scene) if mode in ("automatic", "hybrid") else ()
+        entities = [e for e in entities
+                    if any(rid in matched_regions for rid in e.region_ids)]
+    proposals = tuple(unresolved)
     if proposals:
         warnings.append("Unlocated count suggestions require operator/anchor placement before spatial use")
     patches = []
@@ -187,8 +220,10 @@ def compile_routes(doc: dict, plan: TilePlan, *, mode: str = "manual") -> Routin
         rect = (r.x0/plan.width, r.y0/plan.height,
                 r.x1/plan.width, r.y1/plan.height)
         ids = tuple(rid for rid, region in regions.items()
-                    if mode != "automatic" and _intersects(region["geometry"], rect))
-        patch_entities = tuple(e.id for e in entities if any(rid in ids for rid in e.region_ids)) if mode != "automatic" else ()
+                    if (mode != "automatic" or rid in matched_regions)
+                    and _intersects(region["geometry"], rect))
+        patch_entities = tuple(e.id for e in entities
+                               if any(rid in ids for rid in e.region_ids))
         applicable = [regions[rid] for rid in ids]
         local_parts = [style] if not applicable else []
         for region in applicable:
