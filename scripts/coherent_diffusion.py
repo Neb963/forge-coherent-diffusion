@@ -111,11 +111,11 @@ def editor_tab():
                     "denoiser LoRAs; regional text-encoder/Q4 LoRAs remain unsupported.")
             with gr.Row():
                 submit = gr.Button("Generate with loaded Forge model", variant="primary", elem_id="cd_submit")
-                stop = gr.Button("Stop coherent generation")
-                cancelled = gr.Textbox(label="Cancellation", interactive=False, scale=2)
+                stop = gr.Button("Stop coherent generation", elem_id="cd_stop")
+                cancelled = gr.Textbox(label="Cancellation", interactive=False, scale=2, elem_id="cd_cancel_state")
             with gr.Row():
                 output = gr.HTML(label="Generated image", value="<p>No generation submitted.</p>")
-                result = gr.Textbox(label="Execution evidence / errors", lines=10, interactive=False)
+                result = gr.Textbox(label="Execution evidence / errors", lines=10, interactive=False, elem_id="cd_execution_evidence")
             job = submit.click(
                 fn=_generate_for_ui,
                 inputs=[scene, archive, prompt, negative, model, mode, width, height,
@@ -145,8 +145,8 @@ class Script(scripts.Script):
         with gr.Accordion("Coherent Diffusion — diagnostics", open=False):
             gr.Markdown("Read-only loaded-model inspection. Native txt2img remains untouched.")
             enabled = gr.Checkbox(label="Capture read-only metadata during txt2img", value=False)
-            inspect_button = gr.Button("Inspect loaded model")
-            result = gr.JSON(label="Capability / encoder evidence", value={})
+            inspect_button = gr.Button("Inspect loaded model", elem_id="cd_probe_button")
+            result = gr.JSON(label="Capability / encoder evidence", value={}, elem_id="cd_probe_evidence")
             inspect_button.click(fn=probe_ui, inputs=[], outputs=[result], queue=False)
         gr.Markdown("Open the **Coherent Diffusion** full-width tab for scene editing and opt-in generation.")
         return [enabled]
