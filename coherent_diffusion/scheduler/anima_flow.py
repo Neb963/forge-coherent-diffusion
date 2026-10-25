@@ -13,6 +13,7 @@ import torch
 import torch.nn.functional as F
 
 from .sdxl_sync import Tile, TilePlan, _weights
+from .anchor import anchor_dimensions, expected_anchor_dimensions
 
 
 def flow_sigmas(values) -> tuple[float, ...]:
@@ -165,7 +166,7 @@ class AnimaQualityPlan:
     @classmethod
     def build(cls, target: TilePlan, *, patch_spatial: int, mode: str,
               refine_sigmas, anchor_sigmas=None, factor: int = 2,
-              max_anchor_pixels: int = 1_048_576, global_interaction: str = "none"):
+              max_anchor_pixels: int | None = None, global_interaction: str = "none"):
         validate_anima_tiles(target, patch_spatial=patch_spatial)
         if global_interaction != "none":
             raise ValueError("Unvalidated Anima global interactions are disabled")
@@ -176,20 +177,17 @@ class AnimaQualityPlan:
             if anchor_sigmas is not None:
                 raise ValueError("Direct mode cannot run hidden anchor")
             return cls(mode, target, refine, None, None, patch_spatial, factor)
-        if anchor_sigmas is None or type(max_anchor_pixels) is not int or max_anchor_pixels < 1:
-            raise ValueError("Progressive requires explicit anchor sigmas and pixel budget")
-        divisor = target.scale * factor * patch_spatial
-        if target.width_px % divisor or target.height_px % divisor:
-            raise ValueError("Anima anchor requires exact patch-aligned target dimensions")
-        w, h = target.width_px // factor, target.height_px // factor
-        if w * h > max_anchor_pixels:
-            raise MemoryError("Anima whole-scene anchor exceeds pixel budget")
+        if anchor_sigmas is None:
+            raise ValueError("Progressive requires explicit global overview sigmas")
+        w, h, effective_factor = anchor_dimensions(
+            target, factor, alignment_px=target.scale * patch_spatial,
+            max_anchor_pixels=max_anchor_pixels)
         anchor = TilePlan.build(w, h, max(w, h), 0, 0, scale=8)
         validate_anima_tiles(anchor, patch_spatial=patch_spatial)
         if len(anchor.windows) != 1:
             raise AssertionError("Anchor must be one global DiT window")
         return cls(mode, target, refine, anchor, flow_sigmas(anchor_sigmas),
-                   patch_spatial, factor)
+                   patch_spatial, effective_factor)
 
 
 @dataclass(frozen=True)
@@ -217,9 +215,9 @@ def execute_anima(plan: AnimaQualityPlan, seed: int, predict, *, device="cpu",
             if plan.anchor is None or plan.anchor_sigmas is None:
                 raise ValueError("Missing Anima anchor")
             validate_anima_tiles(plan.anchor, patch_spatial=plan.patch_spatial)
-            if (plan.factor not in (2, 4)
-                    or plan.anchor.width_px * plan.factor != plan.target.width_px
-                    or plan.anchor.height_px * plan.factor != plan.target.height_px
+            if ((plan.anchor.width_px, plan.anchor.height_px) !=
+                    expected_anchor_dimensions(plan.target, plan.factor,
+                                               plan.target.scale * plan.patch_spatial)
                     or len(plan.anchor.windows) != 1):
                 raise ValueError("Anima progressive anchor geometry/lineage mismatch")
             flow_sigmas(plan.anchor_sigmas)
