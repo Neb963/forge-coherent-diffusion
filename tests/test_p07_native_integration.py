@@ -143,7 +143,8 @@ class PerRunLoRAIntent(unittest.TestCase):
                       tile=512, overlap=128, halo=64, steps=2, cfg=1,
                       seed=42, cpu_mib=1024, window_mib=128, scene_json=text)
         with patch.object(ForgeAnima, "check_host", return_value=2), \
-             patch.object(ep, "_model_sigmas", return_value=(1.0, .5, 0.0)):
+             patch.object(ep, "_model_sigmas", return_value=(1.0, .5, 0.0)), \
+             patch.object(ep, "_validate_requested_loras"):
             p = ep.preflight(**kwargs)
             self.assertEqual(p.bypassed_region_loras, 1)
             self.assertFalse(p.activate_region_loras)
@@ -155,6 +156,37 @@ class PerRunLoRAIntent(unittest.TestCase):
             self.assertEqual(active.bypassed_region_loras, 0)
             self.assertEqual(active.document["regions"][0]["loras"][0]["name"],
                              "example_local_texture_lora")
+
+
+class OptInLoRAPreflight(unittest.TestCase):
+    def test_registered_local_only_and_rejects_unknown_before_generation(self):
+        from coherent_diffusion.forge_bridge.regional import UnsupportedRegional
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as folder:
+            p = Path(folder) / "known.safetensors"
+            p.write_bytes(b"local")
+            registry = types.ModuleType("networks")
+            registry.available_network_aliases = {
+                "known": types.SimpleNamespace(filename=str(p))}
+            def doc(name="known", te_weight=None, isolation="prediction"):
+                a = {"name": name, "requested_isolation": isolation}
+                if te_weight is not None:
+                    a["te_weight"] = te_weight
+                return {"regions": [{
+                    "id": "region1", "enabled": True, "blend": {"weight": 1},
+                    "loras": [a],
+                }]}
+            with patch.dict(sys.modules, {"networks": registry}):
+                ep._validate_requested_loras(doc())
+                with self.assertRaisesRegex(UnsupportedRegional, "not in Forge"):
+                    ep._validate_requested_loras(doc(name="fictional"))
+                with self.assertRaisesRegex(UnsupportedRegional, "text-encoder"):
+                    ep._validate_requested_loras(doc(te_weight=.5))
+                with self.assertRaisesRegex(UnsupportedRegional, "experimental internal"):
+                    ep._validate_requested_loras(doc(isolation="experimental_internal"))
+                x = doc(name="fictional")
+                x["regions"][0]["enabled"] = False
+                ep._validate_requested_loras(x)
 
 
 @unittest.skipIf(torch is None, "Native Forge LoRA source contracts use torch")
