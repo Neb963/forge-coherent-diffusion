@@ -27,8 +27,12 @@ jobs:
           python-version: "3.11"
       - name: Install pinned CPU-only torch for deterministic tensor contracts
         run: python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1+cpu
+      - name: Install schema validator for P04 CRF semantic routing
+        run: python -m pip install -r requirements.txt
       - name: Run P03 torch tensor sampler + fake Forge adapter tests
         run: python -m unittest discover -s tests -p 'test_sdxl_sync.py' -v
+      - name: Run P04 progressive SDXL and semantic routing offline tests
+        run: python -m unittest discover -s tests -p 'test_quality_p04.py' -v
   browser-editor:
     runs-on: ubuntu-latest
     steps:
