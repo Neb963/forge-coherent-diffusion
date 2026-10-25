@@ -11,6 +11,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+try:
+    import torch
+except ImportError:
+    torch = None
+
 from coherent_diffusion.crf import canonical_json
 from coherent_diffusion.forge_bridge import entrypoint as ep
 
@@ -73,7 +78,7 @@ class NativeQueueLifecycle(unittest.TestCase):
             result = ep.gradio_generate(*args())
         self.assertIs(host.forge_objects, original)
         self.assertFalse(lock.locked())
-        self.assertEqual(events, ["begin" if False else ("begin", "coherent-diffusion"),
+        self.assertEqual(events, [("begin", "coherent-diffusion"),
                                   "refresh", "forge_reload", "copy_pristine", "execute", "end"])
         self.assertFalse(preflight.call_args.kwargs["activate_region_loras"])
         return result
@@ -116,7 +121,7 @@ class UnetSourceContracts(unittest.TestCase):
         self.assertIn("regional LoRA reference(s)", ui)
 
 
-@unittest.skipIf(ep is None, "unreachable")
+@unittest.skipIf(torch is None, "P07 tensor CI runs regional compiler tests")
 class PerRunLoRAIntent(unittest.TestCase):
     def test_bypass_is_explicit_and_authored_hash_is_stable(self):
         from coherent_diffusion.forge_bridge.anima import ForgeAnima
