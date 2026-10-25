@@ -41,6 +41,26 @@ def _encoder_evidence(clip: Any) -> dict:
     # Even an observed GGUF marker does not prove Q4 or a successful Anima encode.
     return result
 
+
+def _unet_hooks(unet: Any) -> dict:
+    """Names and booleans only; never export weights, tensor values or prompts."""
+    if unet is None:
+        return {"available": False}
+    options = _attr(unet, "model_options")
+    keys = sorted(str(k)[:64] for k in options)[:24] if isinstance(options, dict) else []
+    nested = options.get("transformer_options") if isinstance(options, dict) else None
+    nested_keys = (sorted(str(k)[:64] for k in nested)[:12]
+                   if isinstance(nested, dict) else [])
+    return {
+        "available": True,
+        "controlnet_attached": _attr(unet, "controlnet_linked_list") is not None,
+        "extra_concat_condition_attached": _attr(unet, "extra_concat_condition") is not None,
+        "model_options_type": type(options).__name__,
+        "model_option_keys": keys,
+        "transformer_option_keys": nested_keys,
+        "keys_truncated": isinstance(options, dict) and len(options) > 24,
+    }
+
 def _inspect(model: Any, *, source: str) -> dict[str,Any]:
     obj=_attr(model,"forge_objects")
     unet=_attr(obj,"unet")
@@ -59,7 +79,7 @@ def _inspect(model: Any, *, source: str) -> dict[str,Any]:
         "source":source,
         "upstream_reference_inspected_not_runtime_commit":UPSTREAM_INSPECTED,
         "runtime_commit":"unverified",
-        "model_loaded":model is not None,
+        "model_loaded":model is not None and engine != "modules.sd_models.FakeInitialModel",
         "model_type":engine,
         "model_family":family,
         "model_config_type":_type(config),
@@ -67,6 +87,7 @@ def _inspect(model: Any, *, source: str) -> dict[str,Any]:
         "latent_format_type":_type(_attr(config,"latent_format")),
         "unet_patcher_type":_type(unet),
         "vae_wrapper_type":_type(vae),
+        "unet_hooks":_unet_hooks(unet),
         "is_sdxl":_bool(model,"is_sdxl"),
         "is_wan":_bool(model,"is_wan"),
         "has_conditioning_entry":callable(_attr(model,"get_learned_conditioning")),
