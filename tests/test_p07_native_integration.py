@@ -157,6 +157,7 @@ class PerRunLoRAIntent(unittest.TestCase):
                              "example_local_texture_lora")
 
 
+@unittest.skipIf(torch is None, "Native Forge LoRA source contracts use torch")
 class NativeLoRAIsolation(unittest.TestCase):
     def test_registered_lora_scope_is_transactional_and_q4_clip_untouched(self):
         from coherent_diffusion.forge_bridge.regional import (
