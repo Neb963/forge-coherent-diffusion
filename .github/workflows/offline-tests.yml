@@ -35,6 +35,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_quality_p04.py' -v
       - name: Run P04 stage-specific Forge SDXL adapter stub tests
         run: python -m unittest discover -s tests -p 'test_forge_quality_p04.py' -v
+      - name: Run P05 Anima flow, absolute RoPE, Forge/Q4-preservation stubs
+        run: python -m unittest discover -s tests -p 'test_anima_p05.py' -v
   browser-editor:
     runs-on: ubuntu-latest
     steps:
