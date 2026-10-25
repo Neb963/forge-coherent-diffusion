@@ -5,6 +5,8 @@ existing Anima Q4 encoder are never replaced by registering this extension.
 """
 import gradio as gr
 import json
+import io
+import base64
 from pathlib import Path
 from html import escape
 from modules import scripts, script_callbacks
@@ -74,8 +76,26 @@ def editor_iframe():
 
 
 def _generate_for_ui(*inputs):
+    """Keep result rendering independent of Gradio Image's FileData API schema.
+
+    Some pinned Forge-compatible Gradio 4/client combinations fail server-side
+    schema conversion for FileData. PNG is generated locally, never fetched
+    through a URL, and HTML is static apart from base64 image bytes.
+    """
     image, evidence = gradio_generate(*inputs)
-    return image, json.dumps(evidence, ensure_ascii=False, indent=2)
+    report = json.dumps(evidence, ensure_ascii=False, indent=2)
+    if image is None:
+        return "<p role='status'>No image produced. See execution evidence below.</p>", report
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    if buffer.tell() > 64 * 1024 * 1024:
+        return "<p role='status'>Image PNG exceeds preview limit.</p>", report
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return (f'<div><img alt="Coherent Diffusion generated result" '
+            f'style="display:block;max-width:100%;max-height:820px;margin:auto" '
+            f'src="data:image/png;base64,{encoded}">'
+            f'<p><a download="coherent-diffusion.png" '
+            f'href="data:image/png;base64,{encoded}">Download result PNG</a></p></div>'), report
 
 
 def editor_tab():
@@ -118,7 +138,7 @@ def editor_tab():
                 stop = gr.Button("Stop coherent generation")
                 cancelled = gr.Textbox(label="Cancellation", interactive=False, scale=2)
             with gr.Row():
-                output = gr.Image(label="Generated image", type="pil", interactive=False)
+                output = gr.HTML(label="Generated image", value="<p>No generation submitted.</p>")
                 result = gr.Textbox(label="Execution evidence / errors", lines=10, interactive=False)
             job = submit.click(
                 fn=_generate_for_ui,
