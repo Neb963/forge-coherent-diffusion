@@ -66,6 +66,57 @@ class QualityP04Tests(unittest.TestCase):
         self.assertTrue(torch.equal(got.latent,self.execute(q,7,f).latent))
         self.assertFalse(torch.equal(got.latent,self.execute(q,8,f).latent))
 
+
+    def test_toy_local_repetition_vs_one_global_anchor_multiseed(self):
+        """Toy denoiser comparison only: not a diffusion model or quality proof."""
+        def blobs(tensor):
+            pixels=(tensor[0,0] > .40).tolist()
+            seen=set()
+            count=0
+            for y in range(len(pixels)):
+                for x in range(len(pixels[0])):
+                    if not pixels[y][x] or (x,y) in seen:
+                        continue
+                    count+=1
+                    stack=[(x,y)]
+                    while stack:
+                        px,py=stack.pop()
+                        if (px,py) in seen or not 0<=py<len(pixels) or not 0<=px<len(pixels[0]):
+                            continue
+                        if not pixels[py][px]:
+                            continue
+                        seen.add((px,py))
+                        stack.extend([(px-1,py),(px+1,py),(px,py-1),(px,py+1)])
+            return count
+
+        from coherent_diffusion.scheduler.quality import QualityPlan
+        direct=QualityPlan.build(self.plan,mode="direct",refine_sigmas=[1,0])
+        progressive=QualityPlan.build(self.plan,mode="progressive",
+                                      anchor_sigmas=[1,0],refine_sigmas=[.001,0])
+        def predictor(crop,sigma,tile,stage):
+            yy,xx=torch.meshgrid(torch.arange(crop.shape[-2]),
+                                 torch.arange(crop.shape[-1]),indexing="ij")
+            if stage=="anchor":
+                # Single globally established entity near the top-right.
+                mx,my=5.,1.5
+            elif stage=="refine":
+                return crop
+            else:
+                # Bad control: each window receives a complete scene and
+                # independently emits its own local entity at tile center.
+                mx=(tile.write.x0+tile.write.x1)/2-tile.read.x0
+                my=(tile.write.y0+tile.write.y1)/2-tile.read.y0
+            gaussian=torch.exp(-((xx-mx)**2+(yy-my)**2)/(2*.8**2))
+            return gaussian[None,None].expand_as(crop).clone()
+        for seed in (11,29,57):
+            with self.subTest(seed=seed):
+                local=self.execute(direct,seed,predictor).latent
+                global_first=self.execute(progressive,seed,predictor).latent
+                self.assertGreater(blobs(local),1)
+                self.assertEqual(blobs(global_first),1)
+                self.assertTrue(torch.equal(
+                    global_first,self.execute(progressive,seed,predictor).latent))
+
     def test_stage_progress_lineage_and_cleanup(self):
         q = self.QualityPlan.build(self.plan, mode="progressive",
                                    anchor_sigmas=(2,1,0),refine_sigmas=(1,0))
