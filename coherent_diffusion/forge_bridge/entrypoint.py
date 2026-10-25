@@ -57,10 +57,17 @@ def _int(value, label, minimum, maximum):
     if type(value) is bool:
         raise ValueError(f"{label} must be an integer")
     try:
-        n = int(value)
-        if str(value).strip() not in (str(n),):  # refuse fractional coercion
+        if isinstance(value, float):
+            if not math.isfinite(value) or not value.is_integer():
+                raise ValueError()
+            n = int(value)
+        elif isinstance(value, (int, str)):
+            n = int(value)
+            if isinstance(value, str) and value.strip() != str(n):
+                raise ValueError()
+        else:
             raise ValueError()
-    except (ValueError, TypeError) as exc:
+    except (ValueError, TypeError, OverflowError) as exc:
         raise ValueError(f"{label} must be an integer") from exc
     if not minimum <= n <= maximum:
         raise ValueError(f"{label} must be between {minimum} and {maximum}")
