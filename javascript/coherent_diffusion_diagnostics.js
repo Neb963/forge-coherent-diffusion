@@ -121,7 +121,10 @@
     const log=events.slice(-MAX_RENDER).map(e=>e.at.slice(11,19)+" "+e.kind+" "
       +Object.entries(e).filter(([k])=>k!=="at"&&k!=="kind").map(([k,v])=>k+"="+v).join(" ")).join("\n");
     const server=backendText().split("\n").slice(-25).join("\n");
-    output.textContent="[Browser / Gradio event IDs]\n"+log+
+    const live=document.querySelector("#cd_debug_status textarea, #cd_debug_status input")?.value||"";
+    output.textContent="[Current sampling progress]\n"+
+      (live || "Open Coherent Diffusion tab to activate 2-second progress polling")+
+      "\n\n[Browser / Gradio event IDs]\n"+log+
       "\n\n[Forge Python events]\n"+(server||"Backend log loads when the Coherent Diffusion tab is open");
     if(status) status.textContent="Live · "+events.length+" events";
   }
