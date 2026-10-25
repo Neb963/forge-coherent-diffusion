@@ -170,6 +170,68 @@ class RegionalTests(unittest.TestCase):
             with self.assertRaises(UnsupportedRegionalError()):
                 blended_prediction(p, t, crop, .5, "anchor", predict)
 
+    def test_compilation_mask_workspace_budget(self):
+        d = fixture()
+        d["regions"] = [region("r", [0, 0, .5, 1])]
+        with self.assertRaises(MemoryError):
+            self.compile(d, max_mask_workspace_bytes=128)
+        self.assertEqual(len(self.compile(d).states), 2)
+
+    def test_anima_native_guidance_contract_and_rollback(self):
+        from contextlib import contextmanager
+        from coherent_diffusion.scheduler.sdxl_sync import TilePlan
+        from coherent_diffusion.scheduler.anima_flow import AnimaQualityPlan
+        from coherent_diffusion.scheduler.guidance import GuidanceRequest
+        from coherent_diffusion.forge_bridge import regional as bridge
+        p = TilePlan.build(128, 96, 64, 16, 16)
+        q = AnimaQualityPlan.build(p, patch_spatial=2, mode="direct",
+                                    refine_sigmas=(1, 0))
+        d = fixture()
+        events = []
+        source = torch.full((1, 3, 96, 128), .75, dtype=torch.float32)
+        g = GuidanceRequest("depth", "depth", "anima_vace", source, .5, 0, 1)
+
+        class Fake:
+            def __init__(self):
+                self.positive = [dict(model_conds={"native": "anima"})]
+                self.negative = [dict(model_conds={"native": "negative"})]
+            @classmethod
+            def from_prompts(cls, host, plan, **kw):
+                events.append("encode")
+                return cls()
+            def prepare(self):
+                events.append("prepare")
+            def cleanup(self):
+                events.append("cleanup")
+            def predict(self, crop, sigma, tile):
+                self_outer.assertEqual(crop.shape[1:3], (16, 1))
+                self_outer.assertTrue("control" in self.positive[0])
+                self_outer.assertTrue("control" in self.negative[0])
+                events.append("predict")
+                return torch.zeros_like(crop)
+
+        self_outer = self
+        @contextmanager
+        def factory(host, windows, state, tile):
+            self.assertEqual(len(windows), 1)
+            self.assertEqual(windows[0].backend, "anima_vace")
+            self.assertEqual(windows[0].image.shape[-2:],
+                             (tile.read.height*8, tile.read.width*8))
+            events.append("enter")
+            try:
+                yield SimpleNamespace(get_control=lambda *a: None)
+            finally:
+                events.append("exit")
+
+        with patch.object(bridge, "ForgeAnima", Fake):
+            result = bridge.run_forge_regional_anima(
+                object(), q, d, seed=13, device="cpu", inference_dtype=torch.float32,
+                guidance=(g,), control_factory=factory)
+        self.assertEqual(result.mode, "direct")
+        self.assertGreater(len([x for x in events if x == "predict"]), 0)
+        self.assertEqual(events.count("enter"), events.count("exit"))
+        self.assertEqual(events.count("prepare"), events.count("cleanup"))
+
     def test_unsafe_lora_intents_and_groups(self):
         from coherent_diffusion.scheduler.regional import UnsupportedRegional
         d = fixture()
@@ -266,6 +328,11 @@ class RegionalTests(unittest.TestCase):
                     with self.assertRaises(UnsupportedRegional):
                         with manager.scoped(host, (("look", None, .7),)):
                             pass
+                self.assertIs(host.forge_objects.unet, base_unet)
+                self.assertIs(host.forge_objects.clip, clip)
+                with self.assertRaises(ValueError):
+                    with manager.scoped(host, (("look", sha, .7),)):
+                        raise ValueError("Synthetic denoiser failure")
                 self.assertIs(host.forge_objects.unet, base_unet)
                 self.assertIs(host.forge_objects.clip, clip)
                 with self.assertRaises(UnsupportedRegional):
