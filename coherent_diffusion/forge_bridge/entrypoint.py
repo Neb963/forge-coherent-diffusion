@@ -51,6 +51,8 @@ class JobPlan:
 
 def cancel_generation():
     """Cooperative cancel between steps/windows; no model-global patches."""
+    from .diagnostics import record as debug_record
+    debug_record("ui_cancel_requested")
     _JOB_CANCEL.set()
     return "Cancellation requested; current model forward may finish first."
 
@@ -427,7 +429,11 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
     The per-run model-object pointer is restored on every exit path. Actual
     GPU/encoder correctness still requires installed-host P07 acceptance.
     """
+    from .diagnostics import record as debug_record
     stage = "startup"
+    started = __import__("time").monotonic()
+    debug_record("generation_started", family=family, mode=mode,
+                 width=width, height=height, steps=steps, tile=tile)
     try:
         from modules import sd_models, shared
         if not hasattr(sd_models, "model_data"):
@@ -443,6 +449,7 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
         # own queue does not exclude concurrent tabs or extensions by itself.
         with call_queue.queue_lock:
             stage = "native_job_begin"
+            debug_record("generation_stage", phase=stage)
             state = getattr(shared, "state", None)
             if state is None:
                 raise UnsupportedGeneration("Forge job state unavailable")
@@ -451,6 +458,7 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
                 # Resolve *current* native checkpoint and additional modules;
                 # trigger the same native reload as ordinary Forge generation.
                 stage = "native_model_load"
+                debug_record("generation_stage", phase=stage)
                 main_entry.refresh_model_loading_parameters()
                 host, _ = sd_models.forge_model_reload()
                 if host is None or type(host).__name__ == "FakeInitialModel":
@@ -467,6 +475,7 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
                 host.forge_objects = pristine_holder.shallow_copy()
                 try:
                     stage = "preflight"
+                    debug_record("generation_stage", phase=stage)
                     plan = preflight(
                         host=host, scene_json=scene_json or "",
                         archive_b64=archive_b64 or "", prompt=prompt or "",
@@ -476,15 +485,21 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
                         cpu_mib=cpu_mib, window_mib=window_mib,
                         activate_region_loras=activate_region_loras)
                     stage = "inference_and_decode"
+                    debug_record("generation_stage", phase=stage)
                     image, details = execute(
                         plan, host=host,
                         cancelled=lambda: bool(getattr(state, "interrupted", False)))
+                    debug_record("generation_completed", success=True,
+                                 elapsed_ms=(__import__("time").monotonic()-started)*1000,
+                                 width=plan.width, height=plan.height)
                     return image, details
                 finally:
                     host.forge_objects = original_holder
             finally:
                 state.end()
     except Exception as exc:
+        debug_record("generation_error", type=type(exc).__name__, phase=stage,
+                     elapsed_ms=(__import__("time").monotonic()-started)*1000)
         # The Forge terminal gets a traceback for actual integration defects.
         # Do not include prompts, model weights or local input paths in JSON.
         import traceback
