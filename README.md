@@ -4,9 +4,13 @@ Native high-resolution coherent txt2img for **SDXL and Anima**, with a multilaye
 
 **Implementation through P06 (offline):** The integrated regional editor and CRF v1 JSON/ZIP workflow have offline browser/Gradio coverage. P03 implements an opt-in CPU-resident synchronized SDXL Euler sampler; P04 adds two opt-in SDXL quality trajectories (direct and global-first refinement), stage-specific Forge adapters and conservative CRF semantic window routing. P05 adds an opt-in 5D Anima constant-flow and global patch-RoPE bridge, separate direct/progressive execution and original Qwen/Q4 encoder ownership. P06 adds separate opt-in CRF-to-global-latent regional prompt prediction mixing for both models, SDXL native condition-mask batching under strict capabilities, serial local-registry denoiser LoRA evaluation and typed global-coordinate guidance through explicitly supplied native host control bindings. These are **source contracts and synthetic checks, not a complete installed-Forge activation**. None is activated in the Forge generation UI yet; actual model/GPU inference and supported native ControlNet/LLLite/VACE adapters are deliberately reserved for P07. See [P06 regional conditioning](docs/P06_REGIONAL.md), [P04 quality and routing](docs/P04_GLOBAL_COHERENCE.md), [PHASES.md](PHASES.md), and [to-do.md](to-do.md).
 
+## P07 integration candidate — NOT release-ready
+
+[P07 draft PR #8](https://github.com/Neb963/forge-coherent-diffusion/pull/8) contains an opt-in Gradio Generate panel, editor-to-Forge CRF transfer, strict model/preflight checks, native predictor-derived SDXL Euler and Anima flow sigma trajectories, CPU-resident P04/P05/P06 execution invocation, native tiled decode, cancellation and a reproducible installable ZIP **candidate** in GitHub Actions. See [INSTALL_AND_TEST.md](INSTALL_AND_TEST.md) for extraction, backup/rollback, actual SDXL/Anima/Q4 acceptance and exact known incompatibilities. Unlike P01–P06, **P07 requires real installed Forge Neo and GPU/quality evidence**. Real outputs, LoRA ownership, native control factories, and low-VRAM behavior remain unverified; this branch is not an accepted release.
+
 ## Install P02 editor + P01 diagnostic panel
 
-Place this repository folder at `Forge Neo/extensions/coherent-diffusion/` and restart Forge Neo. Open the full-width **Coherent Diffusion** top-level tab for the regional editor. In txt2img, **Coherent Diffusion — diagnostics only** remains available for model inspection. P02 cannot start diffusion. Clicking **Inspect loaded model** reports non-sensitive capability/encoder metadata about an already-loaded model. Optional process capture does not change the sampler.
+Place this repository folder at `Forge Neo/extensions/coherent-diffusion/` and restart Forge Neo. Open the full-width **Coherent Diffusion** top-level tab for the regional editor. In txt2img, the noninvasive **Coherent Diffusion** diagnostic panel remains available for model inspection. The P07 candidate adds a separate opt-in generation form; compatibility with loaded checkpoints has not yet passed live acceptance. Clicking **Inspect loaded model** reports non-sensitive capability/encoder metadata about an already-loaded model. Optional process capture does not change the sampler.
 
 The P01 CRF validator uses Python `jsonschema==4.25.1`; install `python -m pip install -r requirements.txt` to validate CRF outside Forge. The diagnostic panel itself has no additional runtime dependency beyond Forge's Gradio/Python stack.
 
@@ -37,7 +41,7 @@ print(report.warnings)
 print(canonical_json(report.document))
 ```
 
-CPU tile reference and invariant checks are **not** a diffusion backend, and the benchmark metadata recorder never fabricates performance results. P03/P04 supply offline SDXL paths, P05 supplies an opt-in source-backed Anima flow path, and P06 supplies separately callable regional conditioning and scoped LoRA execution contracts. **No** Forge generation mode or structural-control integration is enabled in the editor until P07 host integration and live acceptance.
+CPU tile reference and invariant checks are **not** a diffusion backend, and the benchmark metadata recorder never fabricates performance results. P03/P04 supply offline SDXL paths, P05 supplies an opt-in source-backed Anima flow path, and P06 supplies separately callable regional conditioning and scoped LoRA execution contracts. The P07 draft integrates an opt-in Generate action but **real-host acceptance is pending**. Structural-control factories and regional LoRA isolation remain gated.
 
 ## Agent workflow
 
