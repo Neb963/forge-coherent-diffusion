@@ -183,7 +183,7 @@ def _region_state(region, doc):
 
 
 def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
-                     max_latent_pixels=None, max_forwards_per_window=16,
+                     max_latent_pixels=None, max_forwards_per_window=None,
                      include_scene_in_base=False,
                      max_mask_workspace_bytes=1024**3):
     """Build complete normalized per-state coefficients, no I/O/model mutations.
@@ -201,7 +201,8 @@ def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
             (type(max_latent_pixels) is not int or max_latent_pixels < 1 or
              plan.width * plan.height > max_latent_pixels)):
         raise UnsupportedRegional("Explicit regional latent allowance exceeded")
-    if type(max_forwards_per_window) is not int or max_forwards_per_window < 1:
+    if max_forwards_per_window is not None and (
+            type(max_forwards_per_window) is not int or max_forwards_per_window < 1):
         raise UnsupportedRegional("Invalid regional forward-work allowance")
     assets = asset_bytes if asset_bytes is not None else {}
     if not isinstance(assets, dict):
@@ -264,10 +265,10 @@ def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
             grouped[state] = w / denom
     result = tuple(RegionWeights(state, value.contiguous()) for state, value in grouped.items()
                    if bool(torch.any(value > 0)))
-    if len(result) > max_forwards_per_window:
-        raise UnsupportedRegional("Distinct regional prediction states exceed forward budget")
+    if max_forwards_per_window is not None and len(result) > max_forwards_per_window:
+        raise UnsupportedRegional("Distinct regional prediction states exceed explicit forward allowance")
     return RegionalPlan(plan, result, tuple(r["id"] for _, r, _ in masks),
-                        tuple(warnings), max_forwards_per_window)
+                        tuple(warnings), max_forwards_per_window or len(result))
 
 
 def blended_prediction(regional: RegionalPlan, tile, crop: torch.Tensor, sigma: float,
