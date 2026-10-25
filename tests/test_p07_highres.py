@@ -89,6 +89,25 @@ class HighResContracts(unittest.TestCase):
             compile_regional(_default_doc("sun","",512,512),t_small,
                              max_mask_workspace_bytes=1)
 
+    def test_regional_forward_count_trades_time_not_resolution(self):
+        from coherent_diffusion.scheduler.sdxl_sync import TilePlan
+        from coherent_diffusion.scheduler.regional import compile_regional, UnsupportedRegional
+        from coherent_diffusion.forge_bridge.entrypoint import _default_doc
+        doc = _default_doc("city skyline", "", 256, 256)
+        for i in range(20):
+            doc["regions"].append({
+                "id": f"r{i}", "geometry": {"type": "bbox", "bbox": [0,0,1,1]},
+                "prompt": f"distinct material {i}",
+                "blend": {"weight":1, "feather_px":0, "z_index":i},
+                "loras": []
+            })
+        target = TilePlan.build(256,256,256,64,0)
+        compiled = compile_regional(doc, target)
+        self.assertEqual(len(compiled.states),21)
+        self.assertEqual(compiled.max_forwards_per_window,21)
+        with self.assertRaisesRegex(UnsupportedRegional, "explicit forward allowance"):
+            compile_regional(doc,target,max_forwards_per_window=16)
+
     def test_p07_preflight_canvas_limit_matches_crf_and_editor(self):
         from coherent_diffusion.forge_bridge import entrypoint as ep
         from coherent_diffusion.crf import parse_validate,canonical_json
