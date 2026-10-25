@@ -248,5 +248,47 @@ class NativeLoRAIsolation(unittest.TestCase):
                 self.assertIs(holder.unet, original_unet)
 
 
+
+class FullResolutionOutputPersistence(unittest.TestCase):
+    def test_full_png_saved_atomically_with_bounded_browser_preview(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Image test runs in tensor job with Pillow")
+        import importlib.util
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            modules=types.ModuleType("modules")
+            scripts=types.ModuleType("modules.scripts")
+            scripts.Script=type("Script",(),{})
+            cb=types.ModuleType("modules.script_callbacks")
+            cb.on_ui_tabs=lambda fn: None
+            paths=types.ModuleType("modules.paths")
+            paths.data_path=tmp
+            modules.scripts, modules.script_callbacks, modules.paths = scripts,cb,paths
+            gr=types.ModuleType("gradio")
+            name="p07_screen_output_test"
+            location=Path(__file__).resolve().parents[1]/"scripts/coherent_diffusion.py"
+            spec=importlib.util.spec_from_file_location(name,location)
+            module=importlib.util.module_from_spec(spec)
+            with patch.dict(sys.modules,{
+                "gradio":gr, "modules":modules, "modules.scripts":scripts,
+                "modules.script_callbacks":cb,"modules.paths":paths,
+            }):
+                spec.loader.exec_module(module)
+                with patch.object(module,"gradio_generate",
+                                  return_value=(Image.new("RGB",(3200,1200),"blue"),
+                                                {"status":"success"})):
+                    html, evidence=module._generate_for_ui()
+            data=json.loads(evidence)
+            path=Path(data["saved_png"])
+            self.assertTrue(path.is_file())
+            self.assertEqual(Image.open(path).size,(3200,1200))
+            self.assertLessEqual(data["preview_width"],1600)
+            self.assertLessEqual(data["preview_height"],1600)
+            self.assertIn("base64,",html)
+            self.assertNotIn("64 MiB",html)
+            self.assertFalse(path.with_suffix(".png.part").exists())
+
 if __name__ == "__main__":
     unittest.main()
