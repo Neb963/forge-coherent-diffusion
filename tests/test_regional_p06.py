@@ -235,16 +235,14 @@ class RegionalTests(unittest.TestCase):
 
     def test_one_global_step_multiwindow_order_independence_sdxl_anima(self):
         from dataclasses import replace
-        from coherent_diffusion.scheduler.regional import blended_prediction
+        from coherent_diffusion.scheduler.regional import blended_prediction, compile_regional
         from coherent_diffusion.scheduler.sdxl_sync import TilePlan, seeded_noise, synchronized_euler
         from coherent_diffusion.scheduler.anima_flow import anima_noise, synchronized_flow
         d = fixture()
         d["regions"] = [region("left", [0, 0, .75, 1], prompt="left"),
                         region("right", [.25, 0, .75, 1], prompt="right")]
         p = TilePlan.build(128, 96, 64, 16, 16)  # Anima patch-2 aligned halo
-        rp = self.compile(d) if p == self.tiles else __import__(
-            "coherent_diffusion.scheduler.regional", fromlist=["compile_regional"]
-        ).compile_regional(d, p)
+        rp = compile_regional(d, p)
         reversed_plan = replace(p, windows=tuple(reversed(p.windows)))
         by_state = lambda state: 2 if "left" in state.prompt else (-1 if "right" in state.prompt else 0)
         global_delta = sum(row.weight * by_state(row.state) for row in rp.states)
