@@ -184,6 +184,11 @@ class EvidenceTests(unittest.TestCase):
         gr.Button=lambda *a,**k:Button()
         gr.JSON=lambda **k:None
         gr.HTML=lambda **k:None
+        gr.Row=lambda **k:Context()
+        gr.Dropdown=lambda *a,**k:None
+        gr.Number=lambda *a,**k:None
+        gr.Textbox=lambda *a,**k:None
+        gr.Image=lambda *a,**k:None
         mod=types.ModuleType("modules")
         scr=types.ModuleType("modules.scripts")
         scr.Script=type("Script",(object,),{})
