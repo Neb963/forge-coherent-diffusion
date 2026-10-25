@@ -156,7 +156,7 @@ class RunnerContracts(unittest.TestCase):
         self.assertEqual(image.size,(512,512))
         self.assertEqual(meta["seed"],42)
         self.assertEqual(meta["crf_sha256"],plan.document_hash)
-        self.assertEqual(meta["model_forwards_estimate"],2)
+        self.assertEqual(meta["window_step_evaluations_lower_bound"],2)
         run.assert_called_once()
         decode.assert_called_once()
         self.assertFalse(ep._JOB_LOCK.locked())
