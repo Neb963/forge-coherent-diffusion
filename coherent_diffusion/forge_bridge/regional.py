@@ -1,0 +1,218 @@
+"""P06 opt-in source-backed Forge regional prediction bridge.
+
+Never installs global hooks or changes Forge's Q4 text loader. Distinct prompt/
+denoiser LoRA states are serial, mask-blended against the SAME crop and sigma.
+The installation's real model, LoRA format and GPU remain P07 evidence.
+"""
+from __future__ import annotations
+
+import hashlib
+import importlib
+import threading
+from contextlib import contextmanager
+from pathlib import Path
+
+from coherent_diffusion.forge_bridge.anima import ForgeAnima
+from coherent_diffusion.forge_bridge.sdxl import ForgeSDXL
+from coherent_diffusion.scheduler.anima_flow import AnimaQualityPlan, execute_anima
+from coherent_diffusion.scheduler.quality import QualityPlan, execute_quality
+from coherent_diffusion.scheduler.regional import (
+    PredictionState, UnsupportedRegional, blended_prediction, compile_regional,
+)
+
+_STATE_LOCK = threading.Lock()
+
+
+def _join(*parts):
+    return ", ".join(x.strip() for x in parts if isinstance(x, str) and x.strip())
+
+
+class NativeForgeLoRAs:
+    """Resolve symbolic names ONLY through the installed Forge LoRA registry.
+
+    Native loader returns cloned model patchers, not filenames to be imported
+    from CRF. No TE patcher replacement; Q4/Qwen path remains Forge-owned.
+    The host must be exclusively owned; other running Forge jobs are not
+    serialized by this extension lock (P07 integration gate).
+    """
+    def __init__(self, registry_module="networks"):
+        self.registry_module = registry_module
+
+    @contextmanager
+    def scoped(self, host, adapters):
+        if not adapters:
+            yield
+            return
+        if not _STATE_LOCK.acquire(blocking=False):
+            raise UnsupportedRegional("Another regional LoRA evaluation is active")
+        obj = getattr(host, "forge_objects", None)
+        if obj is None or not hasattr(obj, "unet") or not hasattr(obj, "clip"):
+            _STATE_LOCK.release()
+            raise UnsupportedRegional("Host patchers unavailable for LoRA transaction")
+        original_unet, original_clip = obj.unet, obj.clip
+        try:
+            module = importlib.import_module(self.registry_module)
+            from backend.args import dynamic_args
+            if getattr(dynamic_args, "nunchaku", False):
+                raise UnsupportedRegional("Nunchaku shared LoRA mutation is unsupported")
+            aliases = getattr(module, "available_network_aliases", None)
+            if not isinstance(aliases, dict):
+                raise UnsupportedRegional("Forge LoRA registry unavailable")
+            unet = original_unet
+            names = set()
+            for name, expected_sha, weight in adapters:
+                if name in names:
+                    raise UnsupportedRegional("Duplicate LoRA name within one model state")
+                names.add(name)
+                entry = aliases.get(name)
+                if entry is None or not isinstance(getattr(entry, "filename", None), str):
+                    raise UnsupportedRegional("LoRA symbolic reference not present in local Forge registry: " + name)
+                path = Path(entry.filename)
+                if not path.is_file():
+                    raise UnsupportedRegional("Registered LoRA file is unavailable: " + name)
+                if expected_sha:
+                    digest = hashlib.sha256()
+                    with path.open("rb") as fd:
+                        for block in iter(lambda: fd.read(1024 * 1024), b""):
+                            digest.update(block)
+                    if digest.hexdigest() != expected_sha:
+                        raise UnsupportedRegional("Registered LoRA SHA256 mismatch: " + name)
+                state_dict = module.load_lora_state_dict(str(path))
+                # Do not pass a CLIP patcher: regional TE-LoRAs would modify
+                # the encoder used by all other spatial states.
+                unet_new, clip_new = module.load_lora_for_models(
+                    unet, None, state_dict, weight, 0.0, filename=str(path), online_mode=False)
+                if unet_new is unet or clip_new is not None:
+                    raise UnsupportedRegional("Native Forge LoRA did not yield a distinct denoiser patcher")
+                unet = unet_new
+            if obj.unet is not original_unet or obj.clip is not original_clip:
+                raise UnsupportedRegional("Forge host patchers changed during adapter resolution")
+            obj.unet = unet
+            try:
+                yield
+            finally:
+                # Always restore original loaded patcher/encoder even on OOM.
+                obj.unet = original_unet
+                obj.clip = original_clip
+        finally:
+            _STATE_LOCK.release()
+
+
+class _RegionalRunner:
+    def __init__(self, host, quality, doc, *, model, cfg, seed,
+                 device, asset_bytes, loras, cancelled, max_forwards_per_window):
+        import torch
+        self.host = host
+        self.quality = quality
+        self.model = model
+        self.cfg = cfg
+        self.seed = seed
+        self.cancelled = cancelled
+        self.device = device
+        self.loras = loras
+        self.cached = {}
+        self.active = None
+        self.active_scope = None
+        self.active_key = None
+        self.regional = compile_regional(
+            doc, quality.target, asset_bytes=asset_bytes,
+            max_forwards_per_window=max_forwards_per_window)
+        # Anima Q4/SDXL global encoder is never replaced. Global objects
+        # are placed only in progressive anchor; tiles receive shared style.
+        self.anchor = PredictionState(_join(doc["global"]["scene_prompt"],
+                                            doc["global"]["style_prompt"]),
+                                      doc["global"].get("negative_prompt") or "")
+
+    def close(self):
+        try:
+            if self.active is not None:
+                self.active.cleanup()
+        finally:
+            self.active = None
+            self.active_key = None
+            if self.active_scope is not None:
+                scope, self.active_scope = self.active_scope, None
+                scope.__exit__(None, None, None)
+
+    def predict_state(self, state, crop, sigma, tile, stage):
+        if self.cancelled is not None and self.cancelled():
+            raise InterruptedError("Regional Forge generation cancelled")
+        key = (stage, state)
+        if key != self.active_key:
+            self.close()
+            if key not in self.cached:
+                selected = self.quality.anchor if stage == "anchor" else self.quality.target
+                if selected is None:
+                    raise UnsupportedRegional("Missing global anchor geometry")
+                cls = ForgeSDXL if self.model == "sdxl" else ForgeAnima
+                kwargs = dict(prompt=state.prompt, negative_prompt=state.negative,
+                              cfg=self.cfg, seed=self.seed, device=self.device)
+                # Compile through existing Forge encoder; no regional TE-LoRAs.
+                self.cached[key] = cls.from_prompts(self.host, selected, **kwargs)
+            adapter = self.cached[key]
+            if state.adapters:
+                scope = self.loras.scoped(self.host, state.adapters)
+                scope.__enter__()
+                self.active_scope = scope
+            try:
+                adapter.prepare()
+                self.active = adapter
+                self.active_key = key
+            except BaseException:
+                self.close()
+                raise
+        return self.active.predict(crop, sigma, tile)
+
+    def predict(self, crop, sigma, tile, stage):
+        if stage == "anchor":
+            return self.predict_state(self.anchor, crop, sigma, tile, stage)
+        return blended_prediction(
+            self.regional, tile, crop, sigma, stage,
+            self.predict_state, cancelled=self.cancelled)
+
+
+def run_forge_regional_sdxl(host, quality: QualityPlan, doc: dict, *, cfg: float,
+                            seed: int, asset_bytes=None, loras=None, device=None,
+                            inference_dtype=None, cancelled=None, progress=None,
+                            max_cpu_bytes=4 * 1024**3,
+                            max_window_bytes=512 * 1024**2,
+                            max_forwards_per_window=16):
+    """Return P04 QualityResult; decoder remains ForgeSDXL.decode_tiled."""
+    if not isinstance(quality, QualityPlan):
+        raise ValueError("SDXL QualityPlan required")
+    if device is None:
+        from backend import memory_management
+        device = memory_management.get_torch_device()
+    manager = _RegionalRunner(
+        host, quality, doc, model="sdxl", cfg=cfg, seed=seed, device=device,
+        asset_bytes=asset_bytes, loras=loras or NativeForgeLoRAs(),
+        cancelled=cancelled, max_forwards_per_window=max_forwards_per_window)
+    return execute_quality(
+        quality, seed, manager.predict, device=device,
+        inference_dtype=inference_dtype, cancelled=cancelled, progress=progress,
+        cleanup=manager.close, max_cpu_bytes=max_cpu_bytes,
+        max_window_bytes=max_window_bytes)
+
+
+def run_forge_regional_anima(host, quality: AnimaQualityPlan, doc: dict, *,
+                             cfg: float = 1.0, seed: int, asset_bytes=None,
+                             loras=None, device=None, inference_dtype=None,
+                             cancelled=None, progress=None,
+                             max_cpu_bytes=4 * 1024**3,
+                             max_window_bytes=512 * 1024**2,
+                             max_forwards_per_window=16):
+    """Return P05 AnimaQualityResult; preserve 5D frozen state and RoPE."""
+    if not isinstance(quality, AnimaQualityPlan):
+        raise ValueError("AnimaQualityPlan required")
+    if device is None:
+        from backend import memory_management
+        device = memory_management.get_torch_device()
+    manager = _RegionalRunner(
+        host, quality, doc, model="anima", cfg=cfg, seed=seed, device=device,
+        asset_bytes=asset_bytes, loras=loras or NativeForgeLoRAs(),
+        cancelled=cancelled, max_forwards_per_window=max_forwards_per_window)
+    return execute_anima(
+        quality, seed, manager.predict, device=device,
+        inference_dtype=inference_dtype, cancelled=cancelled, progress=progress,
+        cleanup=manager.close, max_cpu_bytes=max_cpu_bytes,
+        max_window_bytes=max_window_bytes)
