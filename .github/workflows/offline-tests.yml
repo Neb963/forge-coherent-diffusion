@@ -18,6 +18,14 @@ jobs:
         run: python -m compileall -q coherent_diffusion scripts tests
       - name: Validate schema, CRF, CPU reference, ZIP assets and probes
         run: python -m unittest discover -s tests -v
+      - name: Build deterministic P07 candidate ZIP
+        run: python scripts/build_release_zip.py
+      - name: Upload unaccepted installable extension candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: coherent-diffusion-P07-candidate
+          path: dist/coherent-diffusion-P07-candidate.zip
+          if-no-files-found: error
   tensor-sdxl-offline:
     runs-on: ubuntu-latest
     steps:
@@ -37,6 +45,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_forge_quality_p04.py' -v
       - name: Run P05 Anima flow, absolute RoPE, Forge/Q4-preservation stubs
         run: python -m unittest discover -s tests -p 'test_anima_p05.py' -v
+      - name: P07 offline generation coordination and cancellation regression
+        run: python -m unittest discover -s tests -p 'test_p07_integration.py' -v
       - name: Install bounded PNG raster decoder for P06 verified masks
         run: python -m pip install Pillow==11.3.0
       - name: Run P06 regional masks, LoRA scope and SDXL/Anima offline contracts
