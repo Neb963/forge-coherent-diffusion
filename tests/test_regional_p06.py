@@ -524,6 +524,12 @@ class ForgeWiringTests(unittest.TestCase):
         with self.assertRaises(UnsupportedRegional):
             bridge.run_forge_regional_sdxl(
                 object(), q, d, cfg=3, seed=1, device="cpu", guidance=(guide,))
+        progressive = QualityPlan.build(p, mode="progressive", refine_sigmas=(1, 0),
+                                        anchor_sigmas=(1, 0), anchor_factor=2)
+        with self.assertRaisesRegex(UnsupportedRegional, "anchor guidance"):
+            bridge.run_forge_regional_sdxl(
+                object(), progressive, d, cfg=3, seed=1, device="cpu",
+                guidance=(guide,), control_factory=factory)
         with patch.object(bridge, "ForgeSDXL", Fake):
             bridge.run_forge_regional_sdxl(
                 object(), q, d, cfg=3, seed=1, device="cpu",
