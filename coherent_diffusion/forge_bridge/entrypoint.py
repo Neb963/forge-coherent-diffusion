@@ -317,7 +317,9 @@ def _decode(host, plan, latent):
         raise UnsupportedGeneration("Native Forge VAE output dimensions changed")
     if not torch.isfinite(pixels).all():
         raise UnsupportedGeneration("Native Forge VAE produced nonfinite pixels")
-    return pixels.float().cpu().clamp(0, 1)
+    # Native VAE returns a full NHWC image. Avoid an extra full-size FP32
+    # copy; assemble display-ready bytes in bounded row stripes below.
+    return pixels if pixels.device.type == "cpu" else pixels.to("cpu")
 
 
 def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
@@ -367,7 +369,17 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
             raise InterruptedError("Generation cancelled after decode")
         from PIL import Image
         import torch
-        frame = (pixels[0] * 255).round().to(torch.uint8).numpy()
+        import numpy as np
+        frame = np.empty((plan.height, plan.width, 3), dtype=np.uint8)
+        # Native tiled VAE may still hold multiple complete FP32 CPU tensors.
+        # Row-stripe conversion avoids additional full-frame float temporaries.
+        for top in range(0, plan.height, 64):
+            if stopped():
+                raise InterruptedError("Generation cancelled while assembling decoded image")
+            bottom = min(plan.height, top + 64)
+            stripe = pixels[0, top:bottom].float().clamp(0, 1)
+            frame[top:bottom] = (stripe * 255).round().to(torch.uint8).numpy()
+        del pixels
         image = Image.fromarray(frame)
         meta = {
             "format": "coherent-diffusion-replay", "version": 1,
