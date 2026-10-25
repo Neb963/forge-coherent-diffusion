@@ -25,6 +25,36 @@ class _PromptBatch(list):
         self.is_negative_prompt = negative
 
 
+def _check_unet_hooks(unet):
+    """Reject unowned sampling hooks, with a precise non-mutating diagnosis.
+
+    A bare empty transformer_options dict is an inert bookkeeping container
+    used by extension APIs, not an active attention hook. All other nonempty
+    options still require ownership negotiation (P07 live gate).
+    """
+    if getattr(unet, "controlnet_linked_list", None) is not None:
+        raise UnsupportedAnima(
+            "Active UNet ControlNet attachment; native tiled ControlNet integration "
+            "is not yet verified. Disable that ControlNet or use native txt2img.")
+    if getattr(unet, "extra_concat_condition", None) is not None:
+        raise UnsupportedAnima(
+            "Active UNet extra_concat_condition; external/inpaint conditioning "
+            "cannot yet be tiled safely.")
+    options = getattr(unet, "model_options", None)
+    if options == {} or options == {"transformer_options": {}}:
+        return
+    if not isinstance(options, dict):
+        raise UnsupportedAnima("UNet model_options is unavailable or not a dict")
+    keys = sorted(str(k)[:64] for k in options)[:24]
+    extra = " (+ more)" if len(options) > len(keys) else ""
+    nested = options.get("transformer_options")
+    nested_keys = (sorted(str(k)[:64] for k in nested)[:12]
+                   if isinstance(nested, dict) else [])
+    raise UnsupportedAnima(
+        f"Unnegotiated UNet model_options keys: {keys}{extra}; "
+        f"transformer_option_keys: {nested_keys}. "
+        "Active or unknown extension hooks cannot be silently discarded.")
+
 @dataclass
 class ForgeAnima:
     host: object
@@ -71,10 +101,7 @@ class ForgeAnima:
                 or not callable(getattr(vae, "decode_tiled", None))
                 or not callable(getattr(getattr(vae, "first_stage_model", None), "process_out", None))):
             raise UnsupportedAnima("Requires native WAN 3D 16-channel tiled VAE")
-        if (getattr(unet, "controlnet_linked_list", None) is not None
-                or getattr(unet, "extra_concat_condition", None) is not None
-                or getattr(unet, "model_options", None) != {}):
-            raise UnsupportedAnima("Extra ControlNet/LoRA attention hooks require P06 negotiation")
+        _check_unet_hooks(unet)
         if (getattr(host, "ini_latent", None) is not None
                 or bool(getattr(host, "ref_latents", []))):
             raise UnsupportedAnima("Anima reference-image concatenation unsupported by tiled RoPE")
