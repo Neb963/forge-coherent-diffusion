@@ -115,6 +115,27 @@ def _signed_geometry(geom, plan):
     return torch.where(inside, dist, -dist)
 
 
+def _feather_bitmap(mask: torch.Tensor, feather_px: float, scale: int) -> torch.Tensor:
+    """Separable O(HW) box blur, replicate edge convention, width in image pixels.
+
+    Explicitly approximates signed-distance vector feather; fractional bitmap
+    alpha remains meaningful. Never create large 2D convolution kernels.
+    """
+    if feather_px <= 0:
+        return mask
+    radius = max(1, int(round(feather_px / (2.0 * scale))))
+    radius = min(radius, 256)
+    width = radius * 2 + 1
+    x = mask.reshape(1, 1, *mask.shape)
+    horizontal = F.pad(x, (radius, radius, 0, 0), mode="replicate")
+    csum = F.pad(horizontal.cumsum(dim=-1), (1, 0, 0, 0))
+    x = (csum[..., width:] - csum[..., :-width]) / width
+    vertical = F.pad(x, (0, 0, radius, radius), mode="replicate")
+    csum_y = F.pad(vertical.cumsum(dim=-2), (0, 0, 1, 0))
+    x = (csum_y[..., width:, :] - csum_y[..., :-width, :]) / width
+    return x.view_as(mask).clamp_(0, 1)
+
+
 def _region_mask(region, doc, plan, *, asset_bytes):
     geom = region["geometry"]
     if geom["type"] == "mask":
@@ -123,9 +144,7 @@ def _region_mask(region, doc, plan, *, asset_bytes):
             raise UnsupportedRegional("Mask requires hash-verified archive bytes")
         mask = _mask_image(meta, asset_bytes[geom["asset_id"]],
                            (plan.height, plan.width, geom.get("interpolation", "nearest")))
-        if region["blend"]["feather_px"]:
-            raise UnsupportedRegional("Bitmap mask feather is not calibrated; use prefeathered pixels")
-        return mask
+        return _feather_bitmap(mask, region["blend"]["feather_px"], plan.scale)
     signed = _signed_geometry(geom, plan)
     feather = region["blend"]["feather_px"]
     if feather == 0:
