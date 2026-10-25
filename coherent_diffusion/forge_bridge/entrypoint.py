@@ -220,8 +220,8 @@ def preflight(*, host, family, mode, width, height, tile, overlap, halo,
 
     if family not in ("sdxl", "anima") or mode not in ("direct", "progressive"):
         raise UnsupportedGeneration("Choose one supported model family and trajectory")
-    w = _int(width, "Width", 256, 4096)
-    h = _int(height, "Height", 256, 4096)
+    w = _int(width, "Width", 256, 16384)
+    h = _int(height, "Height", 256, 16384)
     if w % 64 or h % 64:
         raise ValueError("Width and height must align to 64 pixels")
     t = _int(tile, "Tile", 256, 1024)
@@ -375,6 +375,12 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
             "family": plan.family, "mode": plan.mode,
             "width": plan.width, "height": plan.height,
             "tile": plan.tile, "overlap": plan.overlap, "halo": plan.halo,
+            "global_anchor": ({"width": plan.quality.anchor.width_px,
+                               "height": plan.quality.anchor.height_px,
+                               "effective_factor": (plan.quality.anchor_factor if plan.family == "sdxl"
+                                                    else plan.quality.factor),
+                               "actual_model_forwards": len(plan.quality.anchor.windows)}
+                              if plan.quality.anchor is not None else None),
             "steps": plan.steps, "seed": plan.seed, "cfg": plan.cfg,
             "crf_sha256": plan.document_hash,
             "active_regional_loras": plan.activate_region_loras,
