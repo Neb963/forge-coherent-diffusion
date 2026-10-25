@@ -142,8 +142,14 @@ class RegionalTests(unittest.TestCase):
         with self.assertRaises(UnsupportedRegional):
             self.compile(d, asset_bytes={"img": raw + b"tamper"})
         d["regions"][0]["blend"]["feather_px"] = 8
-        with self.assertRaises(UnsupportedRegional):
-            self.compile(d, asset_bytes={"img": raw})
+        blurred = self.compile(d, asset_bytes={"img": raw})
+        self.assertGreater(blurred.states[1].weight[5, 7].item(), 0)
+        self.assertLess(blurred.states[1].weight[5, 7].item(), .5)
+        self.assertGreater(blurred.states[1].weight[5, 8].item(), 0)
+        self.assertLess(blurred.states[1].weight[5, 8].item(), .5)
+        self.assertTrue(torch.allclose(
+            sum(x.weight for x in blurred.states),
+            torch.ones_like(blurred.states[0].weight), atol=1e-6))
 
     def test_identical_prediction_group_and_window_read_coordinates(self):
         from coherent_diffusion.scheduler.regional import blended_prediction
