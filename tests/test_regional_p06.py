@@ -183,6 +183,79 @@ class RegionalTests(unittest.TestCase):
             self.compile(d, max_mask_workspace_bytes=128)
         self.assertEqual(len(self.compile(d).states), 2)
 
+
+    def test_multiple_scoped_lora_state_prediction_blend_and_cleanup(self):
+        from contextlib import contextmanager
+        from coherent_diffusion.scheduler.regional import compile_regional, blended_prediction
+        from coherent_diffusion.scheduler.quality import QualityPlan
+        from coherent_diffusion.scheduler.sdxl_sync import TilePlan
+        from coherent_diffusion.forge_bridge import regional as bridge
+        p = TilePlan.build(128, 96, 64, 16, 16)
+        d = fixture()
+        a = region("a", [0, 0, .75, 1], prompt="left")
+        b = region("b", [.25, 0, .75, 1], prompt="right")
+        a["loras"] = [dict(id="lA", name="lookA", weight=.5,
+                           scope="regional", requested_isolation="prediction")]
+        b["loras"] = [dict(id="lB", name="lookB", weight=.3,
+                           scope="regional", requested_isolation="approximate")]
+        d["regions"] = [a, b]
+        rp = compile_regional(d, p)
+        self.assertEqual(len(rp.states), 3)
+        self.assertEqual(len({x.state.adapters for x in rp.states}), 3)
+        tile = next(t for t in p.windows if t.write.x0 > 0)
+        crop = torch.zeros((1, 4, tile.read.height, tile.read.width))
+        def synthetic(state, x, sigma, t, stage):
+            value = (9 if state.adapters and state.adapters[0][0] == "lookA"
+                     else -2 if state.adapters else 1)
+            return torch.full_like(x, value)
+        out = blended_prediction(rp, tile, crop, 1, "direct", synthetic)
+        expected = sum(row.weight[tile.read.y0:tile.read.y1,
+                                  tile.read.x0:tile.read.x1] *
+                       (9 if row.state.adapters and row.state.adapters[0][0] == "lookA"
+                        else -2 if row.state.adapters else 1) for row in rp.states)
+        self.assertTrue(torch.allclose(out[0, 0], expected, atol=1e-6))
+        events = []
+        host = SimpleNamespace(active_adapters=())
+        class FakeLoRAs:
+            @contextmanager
+            def scoped(self, h, adapters):
+                self_outer.assertEqual(h.active_adapters, ())
+                events.append(("enter", adapters))
+                h.active_adapters = adapters
+                try:
+                    yield
+                finally:
+                    h.active_adapters = ()
+                    events.append(("exit", adapters))
+        self_outer = self
+        class Fake:
+            def __init__(self, prompt):
+                self.prompt = prompt
+            @classmethod
+            def from_prompts(cls, h, plan, **kwargs):
+                return cls(kwargs["prompt"])
+            def prepare(self):
+                events.append(("prepare", self.prompt))
+            def predict(self, x, sigma, tile):
+                if "left" in self.prompt:
+                    self_outer.assertEqual(host.active_adapters[0][0], "lookA")
+                elif "right" in self.prompt:
+                    self_outer.assertEqual(host.active_adapters[0][0], "lookB")
+                else:
+                    self_outer.assertEqual(host.active_adapters, ())
+                return torch.zeros_like(x)
+            def cleanup(self):
+                events.append(("cleanup", self.prompt))
+        q = QualityPlan.build(p, mode="direct", refine_sigmas=(1, 0))
+        with patch.object(bridge, "ForgeSDXL", Fake):
+            result = bridge.run_forge_regional_sdxl(
+                host, q, d, cfg=2, seed=7, device="cpu", loras=FakeLoRAs())
+        self.assertEqual(result.mode, "direct")
+        self.assertEqual(host.active_adapters, ())
+        self.assertEqual(len([e for e in events if e[0] == "enter"]),
+                         len([e for e in events if e[0] == "exit"]))
+        self.assertTrue(any(e[0] == "enter" for e in events))
+
     def test_anima_native_guidance_contract_and_rollback(self):
         from contextlib import contextmanager
         from coherent_diffusion.scheduler.sdxl_sync import TilePlan
