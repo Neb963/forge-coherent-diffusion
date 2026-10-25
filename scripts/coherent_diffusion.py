@@ -142,9 +142,15 @@ def editor_tab():
                 label="Live Python / Gradio events (JSON lines)", lines=11,
                 interactive=False, elem_id="cd_debug_backend",
                 value=debug_recent())
-            debug_clock = gr.Timer(value=2.0, active=True)
-            debug_clock.tick(fn=debug_recent, inputs=[], outputs=[debug_log],
-                             queue=False, show_progress="hidden")
+            if hasattr(gr, "Timer"):
+                debug_clock = gr.Timer(value=2.0, active=True)
+                debug_clock.tick(fn=debug_recent, inputs=[], outputs=[debug_log],
+                                 queue=False, show_progress="hidden")
+            else:
+                # Offline minimal Forge UI stubs do not implement Timer.
+                # Real Forge Neo Gradio 4.40 does; keep manual access on stubs.
+                gr.Button("Refresh diagnostic log").click(
+                    fn=debug_recent, inputs=[], outputs=[debug_log], queue=False)
     return [(panel, "Coherent Diffusion", "coherent_diffusion")]
 
 
