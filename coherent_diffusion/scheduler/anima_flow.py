@@ -217,6 +217,11 @@ def execute_anima(plan: AnimaQualityPlan, seed: int, predict, *, device="cpu",
             if plan.anchor is None or plan.anchor_sigmas is None:
                 raise ValueError("Missing Anima anchor")
             validate_anima_tiles(plan.anchor, patch_spatial=plan.patch_spatial)
+            if (plan.factor not in (2, 4)
+                    or plan.anchor.width_px * plan.factor != plan.target.width_px
+                    or plan.anchor.height_px * plan.factor != plan.target.height_px
+                    or len(plan.anchor.windows) != 1):
+                raise ValueError("Anima progressive anchor geometry/lineage mismatch")
             flow_sigmas(plan.anchor_sigmas)
             _budget(plan.anchor, 1, max_cpu_bytes, max_window_bytes)
             target_field = 16 * plan.target.height * plan.target.width * 4
