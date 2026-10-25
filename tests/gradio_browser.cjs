@@ -48,6 +48,48 @@ const assert=require('node:assert/strict');
    }
    assert.equal(await page.locator('button#cd_submit, #cd_submit button').count(),1,
      'one native Gradio Generate control is registered');
+   // The prior browser smoke never actually submitted the Python event.
+   // Drive the editor transfer through real Gradio queue transport. A
+   // backend_fn:false dependency causes "function has no backend method".
+   const queueFailures=[];
+   const deps=await page.evaluate(async()=>{
+     const cfg=await (await fetch('/config')).json();
+     return cfg.dependencies.filter(d=>d.backend_fn===true)
+        .map(d=>({id:d.id,targets:d.targets,api_name:d.api_name}));
+   });
+   assert.ok(deps.length>=3, 'Generate, Stop, Inspect server handlers registered');
+   try{
+     await page.waitForFunction(() => {
+       const result=document.querySelector('#cd_execution_evidence textarea');
+       return Boolean(result && result.value.includes('SMOKE_BACKEND_CALLED'));
+     }, null, {timeout:20000});
+   }catch(e){
+     const state=await page.evaluate(()=>({
+       response:document.querySelector('#cd_execution_evidence textarea')?.value||'',
+       active:document.querySelector('#cd_submit')?.outerHTML.slice(0,300)
+     }));
+     throw new Error('Gradio editor-to-Python Generate failed: '+JSON.stringify({state,log:log.slice(-3000),deps,errors}));
+   }
+   const evidence=JSON.parse(await page.locator('#cd_execution_evidence textarea').inputValue());
+   assert.equal(evidence.type,'SMOKE_BACKEND_CALLED');
+   assert.equal(evidence.input_count,17,'all UI inputs transferred to backend');
+   // Direct Generate, independent of the iframe bridge, must hit exactly
+   // the same Python callback and remain usable after a completed request.
+   await page.locator('button#cd_submit, #cd_submit button').click();
+   await page.waitForTimeout(1200);
+   assert.equal(JSON.parse(await page.locator('#cd_execution_evidence textarea').inputValue()).type,
+     'SMOKE_BACKEND_CALLED');
+   await page.locator('button#cd_stop, #cd_stop button').click();
+   await page.waitForFunction(()=>
+     (document.querySelector('#cd_cancel_state textarea,input')?.value||'').includes('Cancellation requested'),
+     null,{timeout:10000});
+   await page.getByText('txt2img',{exact:true}).first().click();
+   await page.locator('button#cd_probe_button, #cd_probe_button button').click();
+   await page.waitForFunction(()=>
+     (document.querySelector('#cd_probe_evidence')?.innerText||'').includes('SMOKE_INSPECT_BACKEND_CALLED'),
+     null,{timeout:10000});
+   assert.ok(!log.includes('function has no backend method'),
+      'missing backend function invoked by Gradio 4 queue: '+log.slice(-3000));
    assert.deepEqual(errors,[],'no parent page errors');
    console.log('P07 Gradio mount/editor transfer PASS (not model inference)');
   }finally{await browser.close()}
