@@ -9,7 +9,7 @@ Read `PHASES.md` first. **Exactly one phase per chat.** Mark DONE with phase-app
 | P03 — SDXL synchronized tiled generation | **DONE — offline acceptance 2026-10-25 (live P07)** | P01 |
 | P04 — SDXL global coherence | **DONE — offline accepted and merged (P07 live)** | P03 |
 | P05 — Anima + Q4 GGUF parity | **DONE — offline acceptance 2026-10-25; live P07** | P01, P03, P04 findings |
-| P06 — Regional prompts, LoRAs, controls | READY (after P05 merge) | P02, P04, P05 |
+| P06 — Regional prompts, LoRAs, controls | **IN PROGRESS — offline acceptance only** | P02, P04, P05 |
 | P07 — Final package and simple manual guide | BLOCKED | P01–P06 |
 
 ## Active phase — P01: Foundation, model probes, CRF, benchmark harness
@@ -185,3 +185,21 @@ Inspection of the live branch at `e090bc7`: the editor and ZIP/CRF path exist, b
 - **Tests, verified exact code head:** commit `6ca8ca4eb24030d6da93d35e46e68123d415c791`, [GitHub Actions run 40190091076](https://github.com/Neb963/forge-coherent-diffusion/actions/runs/40190091076) **all three jobs PASS**: pinned PyTorch CPU Anima P05 **14 executed tests**, plus P03 **22**, P04 quality **17**, P04 Forge adapter **4** (57 total torch tests); Python foundation/editor validator suite and compilation PASS; Chromium editor/influence and isolated Gradio iframe suite PASS. Numerical regression covers shifted patch RoPE and temporal source shape, flow x0/velocity and sigma chronology, correct native anchor/noise blending, modified anchor fail-closed, abort/OOM/cleanup, encoder identity, stage prepare and WAN decode. Earlier P05 runs failed on an invalid `Tile` comparison and initial test expectation; these were corrected, not hidden.
 - **Source scope:** Forge Neo `neo` Anima engine/DiT, Qwen engine, `KModel`/predictors, native sampling and WAN VAE were source-inspected. No actual loaded Anima or local Q4 model, Forge installation, GPU output, RoPE source-hook effectiveness with native forward, model activations, VRAM or visual quality tested. All real testing is **P07-only**, per AGENTS/PHASES. No active Generate control is exposed.
 - **Documentation/publication:** [docs/P05_ANIMA_FLOW.md](docs/P05_ANIMA_FLOW.md); early plan-first commit `102ce5d8aef0ea824916833feb4e1ef2af1ff22b`; [PR #6](https://github.com/Neb963/forge-coherent-diffusion/pull/6) on `phase/P05-anima-flow-q4`. Acceptance verified against code head; this final tracker-only commit requires confirmation and squash merge. **Next P06 after merge. Stop after P05.**
+
+
+## Active phase — P06: Regional prompts, LoRAs and structural guidance (2026-10-25)
+
+**Status:** IN PROGRESS; plan-first checkpoint. Baseline accepted P05 `main` at `ad63095c8d3aa02f54bd6d710707d9ade670d77e`. Exactly P06 in scope; live installed Forge/SDXL/Anima/Q4 testing remains P07 only.
+
+### Pre-implementation inspection
+- P02 editor emits CRF v1 bbox, polygon and hash-verified ZIP mask references; the influence preview is advisory, not tensor conditioning. P04 `compile_routes` makes semantic proposals but deliberately sets `connected_to_model=False`. It cannot consume mask pixels.
+- P03/P04 SDXL and P05 Anima share frozen-snapshot synchronized tile schedulers, but their `ForgeSDXL`/`ForgeAnima` use one unmasked positive/negative pair and reject existing host ControlNet/model-option hooks. No P06 generation entrypoint or LoRA switching exists.
+- Forge Neo `backend/sampling/sampling_function.py` provides masked condition handling and `sampling_prepare/cleanup`; native `sd_forge_lora/networks.py` clones LoRA patchers, but host-global mutation and encoder LoRA semantics require strict transactional gating. Anima uses 5D latents and scoped positional RoPE; do not transplant 2D attention assumptions or touch the existing Q4 loader.
+
+### Phase-specific implementation checklist (recorded **before code**)
+- [ ] Compile schema-validated CRF into bounded 2D/3D latent-coordinate bbox/polygon/hash-verified PNG masks; include normalized weighted/priority coefficients, true fractional occlusion, output-pixel feather, disabled/zero-weight semantics and exact stable tie order. Refuse missing/unsafe assets and unsupported aspect transforms transactionally.
+- [ ] Build a common regional prediction coordinator operating inside both existing SDXL and Anima quality schedulers: per-window/read-halo predictions at one frozen sigma, group identical prompt/adapter states, cover global base and full tile/core, make one final x0 for the scheduler without changing the global solver; preserve global scene only at progressive anchor.
+- [ ] Integrate source-backed, opt-in Forge prompt encoding for both models, scoped serial LoRA state changes with strict local registry/hash and denoiser vs text-encoder separation, deterministic rollback on cancellation/errors, no mutation of the original host Q4 encoder. Reject unsupported isolation/hook states rather than silently ignoring them.
+- [ ] Add typed structural-guidance preflight with global-coordinate source maps, progress gates and stage-aware read-halo slices; activate only compatible supplied native Forge control bindings, explicitly refuse unsupported ControlNet/LLLite/Anima variants and patch conflicts.
+- [ ] Add synthetic numerical tests for overlaps/priority/feather/masks/cross-tile invariance, separate SDXL/Anima 4D/5D coordinator tests, prompt/adapter grouping, LoRA capability/rollback, controls and negative rejection; expand CI to run P06 tests using pinned CPU torch, plus existing CRF, editor/Chromium and Gradio suites.
+- [ ] Document tested contracts, supported/unsupported modes, forward-cost/VRAM estimates and P07 live acceptance boundary. Publish phase branch and PR; inspect passing checks on exact HEAD. Update tracker with actual evidence, squash-merge if offline acceptance genuinely met, and STOP without implementing P07.
