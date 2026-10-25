@@ -16,54 +16,8 @@ from coherent_diffusion.forge_bridge.entrypoint import gradio_generate, cancel_g
 _LAST = None
 _EDITOR_PATH = Path(__file__).resolve().parents[1] / "coherent_diffusion" / "editor" / "index.html"
 
-# Gradio 4 JS runs in the parent UI, not inside the iframe. Only accept messages
-# from OUR srcdoc iframe, never arbitrary same-origin web messages. The editor
-# retains all locally saved drafts; data transfer does not alter the document.
-_BRIDGE_JS = r"""() => {
-  if (window.__coherentDiffusionBridgeInstalled) return;
-  window.__coherentDiffusionBridgeInstalled = true;
-  function update(id, value) {
-    const root = document.getElementById(id);
-    const field = root?.querySelector('textarea,input,select');
-    if (!field) throw new Error('Forge generation field unavailable: ' + id);
-    const descriptor = Object.getOwnPropertyDescriptor(
-      field.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype :
-      field.tagName === 'SELECT' ? HTMLSelectElement.prototype :
-      HTMLInputElement.prototype, 'value');
-    descriptor.set.call(field, String(value));
-    field.dispatchEvent(new Event('input', {bubbles:true}));
-    field.dispatchEvent(new Event('change', {bubbles:true}));
-  }
-  window.addEventListener('message', event => {
-    const frame = document.querySelector('iframe[title="Coherent Diffusion region editor"]');
-    if (!frame || event.source !== frame.contentWindow) return;
-    const data = event.data;
-    if (!data || data.kind !== 'coherent-diffusion-generate-v1') return;
-    try {
-      if (typeof data.scene !== 'string' || typeof data.archive !== 'string' ||
-          data.scene.length > 2_100_000 || data.archive.length > 34_000_000)
-        throw new Error('Composition transfer exceeds size budget');
-      const settings = data.settings || {};
-      if (!['sdxl','anima'].includes(settings.model) ||
-          !['direct','progressive'].includes(settings.strategy))
-        throw new Error('Invalid generation mode');
-      update('cd_scene_json', data.scene);
-      update('cd_archive_b64', data.archive);
-      update('cd_model', settings.model);
-      update('cd_mode', settings.strategy);
-      update('cd_width', settings.width);
-      update('cd_height', settings.height);
-      update('cd_tile', settings.tile === 'auto' ? 512 : settings.tile);
-      const submit = document.querySelector('#cd_submit button');
-      if (!submit) throw new Error('Forge Generate button missing');
-      submit.click();
-    } catch (error) {
-      frame.contentWindow.postMessage(
-        {kind:'coherent-diffusion-transfer-error-v1', detail:String(error.message)}, '*');
-    }
-  });
-}"""
-
+# The local srcdoc iframe transfers validated CRF to same-origin Gradio
+# fields. Nested Gradio Blocks js= hooks are not reliable when rendered in Forge.
 
 def editor_iframe():
     """No network resources, CDN dependency or startup sampler hooks."""
@@ -100,7 +54,7 @@ def _generate_for_ui(*inputs):
 
 def editor_tab():
     """Full-width editor and a scoped Gradio 4 generation surface."""
-    with gr.Blocks(analytics_enabled=False, js=_BRIDGE_JS) as panel:
+    with gr.Blocks(analytics_enabled=False) as panel:
         gr.HTML(value=editor_iframe())
         with gr.Accordion("Generate · loaded Forge checkpoint", open=True):
             gr.Markdown(
