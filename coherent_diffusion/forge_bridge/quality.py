@@ -53,9 +53,14 @@ def run_forge_sdxl_quality(host, quality: QualityPlan, *, prompt: str,
                     host, selected, prompt=prompt, negative_prompt=negative_prompt,
                     cfg=cfg, seed=seed, device=device)
                 record("conditioning_done", stage=stage, tile=tile.index)
+                if cancelled is not None and cancelled():
+                    raise InterruptedError("Cancelled after SDXL text encoding")
                 record("model_prepare_begin", stage=stage, tile=tile.index)
                 candidate.prepare()
                 record("model_prepare_done", stage=stage, tile=tile.index)
+                if cancelled is not None and cancelled():
+                    candidate.cleanup()
+                    raise InterruptedError("Cancelled after SDXL model preparation")
                 active = candidate
                 active_name = stage
             return active.predict(crop, sigma, tile)
