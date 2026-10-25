@@ -164,7 +164,8 @@ def _region_state(region, doc):
 
 
 def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
-                     max_latent_pixels=1_048_576, max_forwards_per_window=16):
+                     max_latent_pixels=1_048_576, max_forwards_per_window=16,
+                     include_scene_in_base=False):
     """Build complete normalized per-state coefficients, no I/O/model mutations.
 
     Supports exact normalized aspect only; projective/crop transformations need
@@ -185,7 +186,13 @@ def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
     base = float(doc["global"]["base_weight"])
     neg = doc["global"].get("negative_prompt") or ""
     # The local baseline is shared style, not repeated scene/object declarations.
-    initial = PredictionState(doc["global"]["style_prompt"], neg)
+    if type(include_scene_in_base) is not bool:
+        raise UnsupportedRegional("Explicit direct-scene baseline flag required")
+    base_prompt = doc["global"]["style_prompt"]
+    if include_scene_in_base:
+        base_prompt = ", ".join(dict.fromkeys(x.strip() for x in
+            (doc["global"]["scene_prompt"], base_prompt) if x.strip()))
+    initial = PredictionState(base_prompt, neg)
     masks = []
     warnings = []
     for index, region in enumerate(doc["regions"]):
