@@ -183,7 +183,7 @@ def _region_state(region, doc):
 
 
 def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
-                     max_latent_pixels=1_048_576, max_forwards_per_window=16,
+                     max_latent_pixels=None, max_forwards_per_window=16,
                      include_scene_in_base=False,
                      max_mask_workspace_bytes=1024**3):
     """Build complete normalized per-state coefficients, no I/O/model mutations.
@@ -197,9 +197,12 @@ def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
     c = doc["canvas"]
     if c["width"] * plan.height_px != c["height"] * plan.width_px:
         raise UnsupportedRegional("Aspect mismatch requires explicit reproject before generation")
-    if (type(max_latent_pixels) is not int or plan.width*plan.height > max_latent_pixels
-            or type(max_forwards_per_window) is not int or max_forwards_per_window < 1):
-        raise UnsupportedRegional("Regional compiler pixel/forward budget exceeded")
+    if (max_latent_pixels is not None and
+            (type(max_latent_pixels) is not int or max_latent_pixels < 1 or
+             plan.width * plan.height > max_latent_pixels)):
+        raise UnsupportedRegional("Explicit regional latent allowance exceeded")
+    if type(max_forwards_per_window) is not int or max_forwards_per_window < 1:
+        raise UnsupportedRegional("Invalid regional forward-work allowance")
     assets = asset_bytes if asset_bytes is not None else {}
     if not isinstance(assets, dict):
         raise UnsupportedRegional("Verified mask bytes must be keyed by CRF asset ID")
