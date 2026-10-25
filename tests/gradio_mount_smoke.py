@@ -30,6 +30,16 @@ spec=importlib.util.spec_from_file_location(
     "cd_gradio_integration",Path(__file__).resolve().parents[1]/"scripts"/"coherent_diffusion.py")
 module=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+
+# These callbacks are deliberately synthetic. Browser tests below verify
+# *transport and handler ownership*, never that Forge GPU inference works.
+def isolated_generate(*inputs):
+    return None, {"status": "error", "type": "SMOKE_BACKEND_CALLED",
+                  "detail": "Gradio Python Generate callback was invoked",
+                  "input_count": len(inputs), "partial_image": False}
+module.gradio_generate = isolated_generate
+module.probe_ui = lambda: {"status": "SMOKE_INSPECT_BACKEND_CALLED"}
+
 editor_tabs=[entry for maker in callbacks.handlers for entry in maker()]
 with gr.Blocks(title="P02 Gradio 4 mount smoke") as demo:
     with gr.Tab("txt2img"):
@@ -37,6 +47,24 @@ with gr.Blocks(title="P02 Gradio 4 mount smoke") as demo:
     for tab,title,elem_id in editor_tabs:
         with gr.Tab(title,elem_id="tab_"+elem_id):
             tab.render()
+# Gradio 4.x must copy the nested tab's callable functions into the root
+# event map. Missing fn produces the exact user traceback inside call_function.
+backend_functions = {"_generate_for_ui", "cancel_generation", "probe_ui"}
+registered = [(key, getattr(f, "fn", None)) for key, f in demo.fns.items()
+              if getattr(getattr(f, "fn", None), "__name__", None) in backend_functions]
+assert len(registered) == 3, (
+    "Forge-like nested Blocks rendered without all three Python handlers: "
+    + repr([(i, getattr(fn, "__name__", None)) for i, fn in registered]))
+config = demo.get_config_file()
+deps = config.get("dependencies", [])
+for index, handler in registered:
+    matches = [d for d in deps if d.get("id") == index]
+    assert matches, f"Registered handler {index} missing from root config"
+    assert matches[0].get("backend_fn") is True, (
+        f"Callable Gradio handler {index} incorrectly rendered as no backend: "
+        + repr(matches[0]))
+print("P07_BACKEND_FN_MAP", [(i, f.__name__) for i, f in registered], flush=True)
+
 demo.launch(server_name="127.0.0.1",server_port=18746,
             show_error=True,prevent_thread_lock=True,quiet=True)
 print("P02_GRADIO_READY",flush=True)
