@@ -11,6 +11,16 @@
 5. **Rollback:** stop Forge, remove `extensions/coherent-diffusion`, restore the original backup if any, and restart. No persistent Forge checkpoint/loader patch is intended. Retain exported CRF ZIPs.
 
 
+## Per-window generation progress and model-residency performance (P07)
+
+For a 2048 × 1536, progressive, 20-step Anima scene with 512px tiles and 128px overlap, the target has **20 windows**. With default progressive stage segmentation, this is 20 whole-scene anchor evaluations plus 10 × 20 = 200 refinement-window evaluations before any extra regional states. A 5-region scene can require hundreds or more **sequential distinct prompt evaluations**; it is not equivalent to native 20-step txt2img and does not imply deadlock after 10 minutes. Logs show an upper bound on evaluations (may exceed actual due to zero-coverage regions); they do not invent an ETA or measured VRAM throughput.
+
+Before this repair, the P07 callback passed **no** progress handler, and Anima regional state transitions repeatedly called Forge's `sampling_cleanup`/`sampling_prepare` for mere prompt changes, including between adjacent tiles. The safe source-backed optimization reuses the already prepared Anima patcher within the same stage when only positive/negative conditioning changes and no LoRAs, guidance/controls or different model geometry are involved. Active LoRA/control transitions and stage changes still receive full ownership/cleanup. This reduces avoidable loader thrash; the genuine sequential model forward count is unchanged.
+
+In the **Coherent Diffusion → Live diagnostics** accordion, the status now updates every two seconds with elapsed seconds, completed and upper-bound evaluations, current stage/step/tile, and time since the last event. The bottom-right **CD live debug** panel displays the same status whenever its Gradio tab is mounted, plus timestamped `conditioning_begin/done`, `model_prepare_begin/done`, `prediction_begin/end/failure`, `step_completed`, `decode_begin/done`. Every prediction is journaled; the Forge terminal prints a progress milestone approximately every ten completed evaluations or after a slow individual call. **Stop coherent generation** is cooperative: it is checked between tiles and stages, not in the middle of a long GPU kernel or Forge-native model load. If the current operation takes a very long time, the timer continues showing how long it has been active. Do not interpret a missing ETA as failed progress.
+
+These changes are offline-verified source patches pending installed-Forge validation; 4GB VRAM output, model loading speed, optional regional LoRAs and QoS are not guaranteed.
+
 ## Automatic live diagnostics and one-click export (P07 experimental)
 
 The ZIP installs `javascript/coherent_diffusion_diagnostics.js` through **Forge's native extension JavaScript loader**, without a CDN or userscript. After restarting Forge Neo, a small **CD live debug** button remains available at the bottom-right of Forge, including during failures. Click it to see a continuously updated browser event timeline; click **Download logs** to obtain a timestamped JSON bundle immediately, without DevTools or opening a terminal. Events are retained in bounded browser localStorage so a page refresh does not erase the recent failure.
