@@ -250,6 +250,7 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
         if stopped():
             raise InterruptedError("Generation cancelled after decode")
         from PIL import Image
+        import torch
         frame = (pixels[0] * 255).round().to(torch.uint8).numpy()
         image = Image.fromarray(frame, mode="RGB")
         meta = {
