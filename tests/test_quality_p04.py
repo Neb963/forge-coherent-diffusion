@@ -253,13 +253,37 @@ class RoutingP04Tests(unittest.TestCase):
         a=self.compile(self.doc,self.plan,mode="manual")
         self.assertEqual(a.proposals,())
         b=self.compile(self.doc,self.plan,mode="automatic")
-        self.assertTrue(all(not p.region_ids and not p.entity_ids for p in b.patches))
-        self.assertTrue(all(p.located is False for p in b.proposals))
-        self.assertTrue(any(p.count==1 for p in b.proposals))
-        self.assertIn("unlocated",str(b.warnings).lower())
+        # Automatic mode may use existing uniquely named authored geometry.
+        self.assertEqual(b.patches,a.patches)
+        self.assertEqual(b.proposals,())
+        self.assertTrue(any("pre-authored" in w for w in b.warnings))
         h=self.compile(self.doc,self.plan,mode="hybrid")
         self.assertEqual(h.patches,a.patches)
-        self.assertGreaterEqual(len(h.proposals),1)
+        self.assertEqual(h.proposals,())
+        # An entity named in prose but without matching known coordinates is
+        # never invented or injected into arbitrary windows.
+        self.doc["global"]["scene_prompt"]="Exactly one phoenix above two subjects"
+        auto=self.compile(self.doc,self.plan,mode="automatic")
+        self.assertEqual(len(auto.proposals),1)
+        self.assertEqual(auto.proposals[0].count,1)
+        self.assertFalse(auto.proposals[0].located)
+        self.assertFalse(any("sun" in p.region_ids for p in auto.patches))
+        self.assertTrue(any("subjects" in p.region_ids for p in auto.patches))
+
+    def test_auto_ambiguous_names_and_conflicting_counts_abstain(self):
+        self.doc["global"]["scene_prompt"]="One sun above the sea"
+        self.doc["regions"].append(
+            {"id":"other","name":"sun","geometry":{"type":"bbox","bbox":[.7,.7,.1,.1]},
+             "prompt":"glow","blend":{"weight":1,"feather_px":0,"z_index":0}})
+        auto=self.compile(self.doc,self.plan,mode="automatic")
+        self.assertEqual(len(auto.proposals),1)
+        self.assertFalse(any(p.region_ids for p in auto.patches))
+        # No ambiguous shadow entity or fabricated second instance.
+        self.doc["regions"].pop()
+        self.doc["entities"][0]["count"]=2
+        auto=self.compile(self.doc,self.plan,mode="automatic")
+        self.assertEqual(auto.entities[0].count,2)
+        self.assertTrue(any("conflicts" in w for w in auto.warnings))
 
     def test_exact_polygon_clipping_not_bounding_box(self):
         self.doc["regions"]=[{"id":"triangle","geometry":{
