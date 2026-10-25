@@ -84,6 +84,10 @@ const assert=require('node:assert/strict');
      (document.querySelector('#cd_cancel_state textarea, #cd_cancel_state input')?.value||'').includes('Cancellation requested'),
      null,{timeout:10000});
    await page.getByText('txt2img',{exact:true}).first().click();
+   // A legal Forge-style client-only listener must never be routed
+   // to blocks.call_function (it has no Python fn).
+   await page.locator('button#cd_host_js_only, #cd_host_js_only button').click();
+   await page.waitForTimeout(400);
    await page.getByText('Coherent Diffusion — diagnostics',{exact:true}).first().click();
    await page.locator('button#cd_probe_button, #cd_probe_button button').click();
    await page.waitForFunction(()=>
