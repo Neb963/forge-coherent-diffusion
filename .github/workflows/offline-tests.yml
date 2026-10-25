@@ -37,6 +37,10 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_forge_quality_p04.py' -v
       - name: Run P05 Anima flow, absolute RoPE, Forge/Q4-preservation stubs
         run: python -m unittest discover -s tests -p 'test_anima_p05.py' -v
+      - name: Install bounded PNG raster decoder for P06 verified masks
+        run: python -m pip install Pillow==11.3.0
+      - name: Run P06 regional masks, LoRA scope and SDXL/Anima offline contracts
+        run: python -m unittest discover -s tests -p 'test_regional_p06.py' -v
   browser-editor:
     runs-on: ubuntu-latest
     steps:
