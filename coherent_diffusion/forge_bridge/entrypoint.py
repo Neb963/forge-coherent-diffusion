@@ -171,6 +171,43 @@ def _model_sigmas(host, family: str, steps: int):
     return result
 
 
+def _validate_requested_loras(doc):
+    """Fail before text encoding/sampling if a requested adapter cannot exist.
+
+    Use only Forge's locally registered aliases; no external downloads, text
+    encoder patching or guessed filesystem paths. Native loader still verifies
+    hashes and patcher success when the actual regional state is entered.
+    """
+    import importlib
+    from pathlib import Path
+    from coherent_diffusion.forge_bridge.regional import UnsupportedRegional
+    try:
+        registry = importlib.import_module("networks")
+    except ImportError as exc:
+        raise UnsupportedRegional(
+            "Forge's built-in LoRA registry is not available; cannot activate regional LoRAs") from exc
+    aliases = getattr(registry, "available_network_aliases", None)
+    if not isinstance(aliases, dict):
+        raise UnsupportedRegional("Forge's available_network_aliases registry is not ready")
+    for region in doc["regions"]:
+        if not region.get("enabled", True) or region["blend"]["weight"] <= 0:
+            continue
+        for adapter in region.get("loras", []):
+            if adapter["requested_isolation"] == "experimental_internal":
+                raise UnsupportedRegional(
+                    f"Region {region['id']}: experimental internal LoRA isolation is unavailable")
+            if adapter.get("te_weight") not in (None, 0):
+                raise UnsupportedRegional(
+                    f"Region {region['id']}: text-encoder LoRA cannot mutate a shared/Q4 encoder")
+            name = adapter["name"]
+            entry = aliases.get(name)
+            filename = getattr(entry, "filename", None)
+            if not isinstance(filename, str) or not Path(filename).is_file():
+                raise UnsupportedRegional(
+                    f"Region {region['id']}: LoRA '{name}' is not in Forge's local registry "
+                    "or its file is unavailable. Choose a registered local LoRA.")
+
+
 def preflight(*, host, family, mode, width, height, tile, overlap, halo,
               steps, cfg, seed, cpu_mib, window_mib, scene_json="",
               archive_b64="", prompt="", negative="", activate_region_loras=False):
@@ -225,6 +262,8 @@ def preflight(*, host, family, mode, width, height, tile, overlap, halo,
             {**r, "loras": []} if r.get("loras") else r
             for r in doc["regions"]
         ]}
+    elif active_refs:
+        _validate_requested_loras(doc)
 
     plan = TilePlan.build(w, h, t, ov, ha)
     # Use actual loaded predictor shape and sigma scaling. This is an
