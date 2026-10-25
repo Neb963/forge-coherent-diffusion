@@ -89,8 +89,8 @@ class RunnerContracts(unittest.TestCase):
                    {"halo":72},{"overlap":512},{"steps":101}):
             with self.subTest(kw=kw),self.assertRaises(ValueError):
                 self.plan(**kw)
-        with self.assertRaises(ValueError):
-            self.plan(family="anima", mode="progressive", width=704)
+        with self.assertRaises(ep.UnsupportedGeneration):
+            self.plan(family="anima", mode="unsupported")
 
     def test_crf_aspect_and_lora_safety(self):
         from coherent_diffusion.crf import canonical_json
