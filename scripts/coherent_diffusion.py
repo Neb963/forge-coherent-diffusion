@@ -7,6 +7,8 @@ import gradio as gr
 import json
 import io
 import base64
+import uuid
+import os
 from pathlib import Path
 from html import escape
 from modules import scripts, script_callbacks
@@ -30,26 +32,38 @@ def editor_iframe():
 
 
 def _generate_for_ui(*inputs):
-    """Keep result rendering independent of Gradio Image's FileData API schema.
+    """Persist the lossless full PNG and embed only a bounded-size preview.
 
-    Some pinned Forge-compatible Gradio 4/client combinations fail server-side
-    schema conversion for FileData. PNG is generated locally, never fetched
-    through a URL, and HTML is static apart from base64 image bytes.
+    Never discard the original just because the output exceeds the old
+    64-MiB HTML data-URI limit. Gradio versions differ in FileData plumbing.
     """
     image, evidence = gradio_generate(*inputs)
-    report = json.dumps(evidence, ensure_ascii=False, indent=2)
     if image is None:
-        return "<p role='status'>No image produced. See execution evidence below.</p>", report
+        return "<p role='status'>No image produced. See execution evidence below.</p>", json.dumps(evidence, ensure_ascii=False, indent=2)
+    from modules import paths
+    outdir = Path(paths.data_path).resolve() / "outputs" / "coherent-diffusion"
+    outdir.mkdir(parents=True, exist_ok=True)
+    filename = f"coherent-diffusion-{uuid.uuid4().hex}.png"
+    destination = outdir / filename
+    temporary = outdir / (filename + ".part")
+    try:
+        image.save(temporary, format="PNG")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    preview = image.copy()
+    preview.thumbnail((1600, 1600))
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    if buffer.tell() > 64 * 1024 * 1024:
-        return "<p role='status'>Image PNG exceeds preview limit.</p>", report
+    preview.save(buffer, format="PNG")
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    return (f'<div><img alt="Coherent Diffusion generated result" '
+    evidence = {**evidence, "saved_png": str(destination),
+                "preview_width": preview.width, "preview_height": preview.height}
+    report = json.dumps(evidence, ensure_ascii=False, indent=2)
+    return (f'<div><img alt="Coherent Diffusion generated preview" '
             f'style="display:block;max-width:100%;max-height:820px;margin:auto" '
             f'src="data:image/png;base64,{encoded}">'
-            f'<p><a download="coherent-diffusion.png" '
-            f'href="data:image/png;base64,{encoded}">Download result PNG</a></p></div>'), report
+            f'<p>Lossless full-size PNG saved to Forge outputs/coherent-diffusion/ '
+            f'({image.width} × {image.height}).</p></div>'), report
 
 
 def editor_tab():
@@ -58,8 +72,8 @@ def editor_tab():
         gr.HTML(value=editor_iframe())
         with gr.Accordion("Generate · loaded Forge checkpoint", open=True):
             gr.Markdown(
-                "Generate uses the **currently loaded** SDXL or Anima model; it does not "
-                "load checkpoints or change the native txt2img sampler. Click **Generate image** "
+                "Generate uses Forge-native loading for your selected checkpoint/encoder. It does not "
+                "change the native txt2img sampler. Click **Generate image** "
                 "in the canvas to transfer its CRF, or use these controls directly. "
                 "**Unverified installed-host compatibility:** start with a small scene. "
                 "Optional controls, real-host regional LoRA isolation, batch, Hires Fix and img2img "
