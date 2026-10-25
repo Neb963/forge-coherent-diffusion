@@ -216,7 +216,8 @@ class RegionalTests(unittest.TestCase):
         b = gp.for_window(end, .5)[0]
         self.assertAlmostEqual(b.image[0, 0, 0, 0].item(),
                                image[0, 0, end.read.y0*8, end.read.x0*8].item())
-        self.assertTrue(torch.all(b.mask == 0))
+        self.assertGreater(b.mask[0, 0, 0, 0].item(), 0)  # halo crosses region edge
+        self.assertEqual(b.mask[0, 0, 0, -1].item(), 0)
         with self.assertRaises(UnsupportedRegional):
             GuidancePlan(d, self.tiles, "anima", (req,))
         with self.assertRaises(UnsupportedRegional):
