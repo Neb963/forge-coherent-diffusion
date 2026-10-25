@@ -264,12 +264,16 @@ def run_forge_anima_quality(host, plan: AnimaQualityPlan, *, prompt: str,
                     host, plan.target, prompt=prompt, negative_prompt=negative_prompt,
                     cfg=cfg, seed=seed, device=device)
                 record("conditioning_done", stage=stage, tile=tile.index)
+                if cancelled is not None and cancelled():
+                    raise InterruptedError("Cancelled after Anima text encoding")
             if stage_name != stage:
                 close()
                 active.plan = plan.anchor if stage == "anchor" else plan.target
                 record("model_prepare_begin", stage=stage, tile=tile.index)
                 active.prepare()
                 record("model_prepare_done", stage=stage, tile=tile.index)
+                if cancelled is not None and cancelled():
+                    raise InterruptedError("Cancelled after Anima model preparation")
                 stage_name = stage
             return active.predict(crop, sigma, tile)
 
