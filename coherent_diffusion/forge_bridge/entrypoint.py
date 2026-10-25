@@ -363,7 +363,7 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
         # Offline no-host probes and actual missing-checkpoint are distinct
         # from the Forge FakeInitialModel placeholder (loadable by UI).
         if getattr(sd_models.model_data, "sd_model", None) is None:
-            raise UnsupportedGeneration("Select an SDXL or Anima checkpoint in Forge first")
+            raise UnsupportedGeneration("Load an SDXL or Anima checkpoint by selecting it in Forge first")
         from modules import call_queue
         from modules_forge import main_entry
 
