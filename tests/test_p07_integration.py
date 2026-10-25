@@ -121,6 +121,31 @@ class RunnerContracts(unittest.TestCase):
                     self.assertEqual(q.refine_sigmas[-1],0)
                     self.assertEqual(len(q.target.windows),1)
                     self.assertEqual(q.anchor is not None,mode=="progressive")
+                    if mode == "progressive":
+                        self.assertLess(q.refine_sigmas[0], q.anchor_sigmas[0])
+                        self.assertEqual(q.anchor_sigmas[0], 1.0)
+                        self.assertGreater(q.refine_sigmas[0], 0)
+                    else:
+                        self.assertEqual(q.refine_sigmas[0], 1.0)
+
+    def test_progressive_anima_anchor_is_not_erased_at_refine_start(self):
+        from coherent_diffusion.scheduler.anima_flow import execute_anima
+        q=self.plan(family="anima",mode="progressive").quality
+        images=[]
+        for anchor_signal in (1.0,-1.0):
+            seen=[]
+            def predict(crop,sigma,tile,stage):
+                if stage=="anchor":
+                    return torch.full_like(crop,anchor_signal)
+                if not seen:
+                    seen.append(crop.detach().clone())
+                return crop
+            result=execute_anima(q,7,predict,device="cpu",
+                                 max_cpu_bytes=512*1024**2)
+            self.assertTrue(seen)
+            self.assertEqual(result.mode,"progressive")
+            images.append(seen[0])
+        self.assertGreater(float((images[0]-images[1]).abs().mean()),.3)
 
     def test_explicit_geometry_rejections(self):
         for kw in ({"width":513},{"height":4096+64},{"tile":352},
