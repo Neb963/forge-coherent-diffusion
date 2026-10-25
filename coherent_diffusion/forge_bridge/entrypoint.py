@@ -230,14 +230,24 @@ def preflight(*, host, family, mode, width, height, tile, overlap, halo,
     # Use actual loaded predictor shape and sigma scaling. This is an
     # explicitly selected Euler/flow trajectory, not Forge's default sampler.
     sigmas = _model_sigmas(host, family, n)
-    # A separate global stage is necessary for progressive geometry lineage.
-    anchor_sigmas = sigmas if mode == "progressive" else None
+    # A progressive second stage MUST start at an intermediate model-native
+    # sigma. Starting Anima refinement at sigma=1 erases the upscaled global
+    # anchor by the native flow mixing equation: (1-sigma)*anchor + sigma*noise.
+    # SDXL also benefits from a partial-denoise refinement instead of
+    # overwhelming its anchor with full-training-sigma noise again.
+    if mode == "progressive":
+        cut = max(1, (len(sigmas) - 1) // 2)
+        anchor_sigmas = sigmas
+        refine_sigmas = sigmas[cut:]
+    else:
+        anchor_sigmas = None
+        refine_sigmas = sigmas
     if family == "sdxl":
-        quality = QualityPlan.build(plan, mode=mode, refine_sigmas=sigmas,
+        quality = QualityPlan.build(plan, mode=mode, refine_sigmas=refine_sigmas,
                                     anchor_sigmas=anchor_sigmas)
     else:
         quality = AnimaQualityPlan.build(plan, mode=mode, patch_spatial=patch,
-                                         refine_sigmas=sigmas,
+                                         refine_sigmas=refine_sigmas,
                                          anchor_sigmas=anchor_sigmas)
     if assets and not any(r["geometry"]["type"] == "mask" for r in doc["regions"]):
         raise ValueError("Orphan mask data in composition")
@@ -334,6 +344,11 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
             "trajectory": "loaded_predictor_uniform_timestep_euler" if plan.family == "sdxl"
                            else "loaded_predictor_shifted_constant_flow",
             "sigma_first": plan.quality.refine_sigmas[0],
+            "refine_steps": len(plan.quality.refine_sigmas) - 1,
+            "anchor_steps": (len(plan.quality.anchor_sigmas) - 1
+                             if plan.quality.anchor_sigmas is not None else 0),
+            "anchor_sigma_first": (plan.quality.anchor_sigmas[0]
+                                   if plan.quality.anchor_sigmas is not None else None),
             "sigma_sha256": hashlib.sha256(json.dumps(
                 plan.quality.refine_sigmas, separators=(",", ":")).encode()).hexdigest(),
             "generation_limits": "batch=1; no hires/img2img/resume; controls/TE-LoRA not activated",
