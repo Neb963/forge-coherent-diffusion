@@ -94,6 +94,7 @@ class NativeQueueLifecycle(unittest.TestCase):
 
 
 class UnetSourceContracts(unittest.TestCase):
+    @unittest.skipIf(torch is None, "Needs torch to import SDXL backend")
     def test_default_sdxl_host_has_empty_container_not_active_hook(self):
         from coherent_diffusion.forge_bridge.sdxl import ForgeSDXL, UnsupportedSDXL
         class StableDiffusionXL:
