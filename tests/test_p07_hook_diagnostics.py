@@ -53,6 +53,35 @@ class HookRejection(unittest.TestCase):
                     _check_unet_hooks(obj)
         self.assertEqual(patcher().model_options, {})
 
+    def test_native_sampler_sigma_bookkeeping_only(self):
+        import torch
+        from coherent_diffusion.forge_bridge.anima import _check_unet_hooks, UnsupportedAnima
+        def obj(value, extra=None):
+            nested = {"sampling_sigmas": value}
+            if extra is not None:
+                nested["patches"] = extra
+            return SimpleNamespace(controlnet_linked_list=None,
+                                   extra_concat_condition=None,
+                                   model_options={"transformer_options": nested})
+        _check_unet_hooks(obj(torch.tensor([1.0, 0.7, 0.0])))
+        _check_unet_hooks(obj([1.0, 0.5, 0.0]))
+        _check_unet_hooks(obj((1.0, 0.5, 0.0)))
+        invalid = [None, [], [0.5], [0.3, float("nan")],
+                   torch.tensor([0.5, float("inf")]),
+                   torch.zeros(1, 2), torch.tensor([1, 0]),
+                   torch.zeros(1025)]
+        for value in invalid:
+            with self.subTest(type=type(value).__name__):
+                with self.assertRaisesRegex(UnsupportedAnima, "sampling_sigmas has an invalid"):
+                    _check_unet_hooks(obj(value))
+        with self.assertRaisesRegex(UnsupportedAnima, "Unnegotiated"):
+            _check_unet_hooks(obj([1.0, 0.0], extra=[object()]))
+        with self.assertRaisesRegex(UnsupportedAnima, "Unnegotiated"):
+            u = obj([1.0, 0.0])
+            u.model_options["sampler_post_cfg_function"] = [lambda x: x]
+            _check_unet_hooks(u)
+
+
 
 if __name__ == "__main__":
     unittest.main()
