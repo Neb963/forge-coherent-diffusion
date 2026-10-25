@@ -84,9 +84,13 @@ class ForgeSDXL:
             raise UnsupportedSDXL("ControlNet/LLLite per-tile spatial remapping is P06 only")
         if getattr(unet, "extra_concat_condition", None) is not None:
             raise UnsupportedSDXL("Concat/inpaint conditioning not implemented by P03")
-        options = getattr(unet, "model_options", {})
-        if not isinstance(options, dict) or options:
-            raise UnsupportedSDXL("Nonempty Forge model options/hook state unsupported by P03")
+        # Native ModelPatcher always starts with an empty transformer_options
+        # container. Reject *active* hooks, but not Forge's own bookkeeping.
+        from coherent_diffusion.forge_bridge.anima import _check_unet_hooks
+        try:
+            _check_unet_hooks(unet)
+        except Exception as exc:
+            raise UnsupportedSDXL("Unnegotiated SDXL UNet options: " + str(exc)) from exc
         if getattr(vae, "upscale_ratio", None) != 8 or getattr(vae, "latent_channels", None) != 4:
             raise UnsupportedSDXL("Requires SDXL 4-channel, 8x VAE geometry")
         if not callable(getattr(host, "get_learned_conditioning", None)):
