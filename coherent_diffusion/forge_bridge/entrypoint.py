@@ -355,6 +355,7 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
     The per-run model-object pointer is restored on every exit path. Actual
     GPU/encoder correctness still requires installed-host P07 acceptance.
     """
+    stage = "startup"
     try:
         from modules import sd_models, shared
         if not hasattr(sd_models, "model_data"):
@@ -369,6 +370,7 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
         # All native txt2img and img2img jobs use this same FIFO lock. Gradio's
         # own queue does not exclude concurrent tabs or extensions by itself.
         with call_queue.queue_lock:
+            stage = "native_job_begin"
             state = getattr(shared, "state", None)
             if state is None:
                 raise UnsupportedGeneration("Forge job state unavailable")
@@ -376,6 +378,7 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
             try:
                 # Resolve *current* native checkpoint and additional modules;
                 # trigger the same native reload as ordinary Forge generation.
+                stage = "native_model_load"
                 main_entry.refresh_model_loading_parameters()
                 host, _ = sd_models.forge_model_reload()
                 if host is None or type(host).__name__ == "FakeInitialModel":
@@ -391,6 +394,7 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
                 # patcher set for our own region states, restore it afterwards.
                 host.forge_objects = pristine_holder.shallow_copy()
                 try:
+                    stage = "preflight"
                     plan = preflight(
                         host=host, scene_json=scene_json or "",
                         archive_b64=archive_b64 or "", prompt=prompt or "",
@@ -399,6 +403,7 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
                         halo=halo, steps=steps, cfg=cfg, seed=seed,
                         cpu_mib=cpu_mib, window_mib=window_mib,
                         activate_region_loras=activate_region_loras)
+                    stage = "inference_and_decode"
                     image, details = execute(
                         plan, host=host,
                         cancelled=lambda: bool(getattr(state, "interrupted", False)))
@@ -408,5 +413,11 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
             finally:
                 state.end()
     except Exception as exc:
+        # The Forge terminal gets a traceback for actual integration defects.
+        # Do not include prompts, model weights or local input paths in JSON.
+        import traceback
+        print(f"[Coherent Diffusion] {stage}: {type(exc).__name__}: {exc}")
+        traceback.print_exc()
         return None, {"status": "error", "type": type(exc).__name__,
+                      "phase": stage,
                       "detail": str(exc)[:800], "partial_image": False}
