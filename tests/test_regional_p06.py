@@ -186,6 +186,59 @@ class RegionalTests(unittest.TestCase):
         with self.assertRaises(UnsupportedRegional):
             self.compile(d)
 
+
+    def test_entity_fallback_only_for_unset_prompt(self):
+        d = fixture()
+        d["regions"] = [region("object", [0, 0, 1, 1], prompt=None)]
+        d["entities"] = [dict(id="unique", description="one red lantern",
+                              count=1, region_ids=["object"])]
+        p = self.compile(d)
+        self.assertIn("cinematic, one red lantern", [r.state.prompt for r in p.states])
+        d["regions"][0]["prompt"] = ""
+        p2 = self.compile(d)
+        self.assertNotIn("cinematic, one red lantern", [r.state.prompt for r in p2.states])
+
+    def test_guidance_full_global_coordinates_progress_and_rejections(self):
+        from coherent_diffusion.scheduler.guidance import GuidancePlan, GuidanceRequest
+        from coherent_diffusion.scheduler.regional import UnsupportedRegional
+        d = fixture()
+        d["regions"] = [region("left", [0, 0, .5, 1])]
+        image = torch.linspace(0, 1, 128).view(1, 1, 1, 128).expand(1, 3, 96, 128).clone()
+        req = GuidanceRequest("edge", "edge", "sdxl_controlnet", image, .7, .25, .75, ("left",))
+        gp = GuidancePlan(d, self.tiles, "sdxl", (req,))
+        self.assertFalse(gp.for_window(self.tiles.windows[0], .1))
+        a = gp.for_window(self.tiles.windows[0], .5)[0]
+        self.assertEqual(a.image.shape[-2:],
+                         (self.tiles.windows[0].read.height*8, self.tiles.windows[0].read.width*8))
+        self.assertEqual(a.mask.shape[-2:], a.image.shape[-2:])
+        self.assertAlmostEqual(a.image[0, 0, 0, 0].item(), 0)
+        end = self.tiles.windows[-1]
+        b = gp.for_window(end, .5)[0]
+        self.assertAlmostEqual(b.image[0, 0, 0, 0].item(),
+                               image[0, 0, end.read.y0*8, end.read.x0*8].item())
+        self.assertTrue(torch.all(b.mask == 0))
+        with self.assertRaises(UnsupportedRegional):
+            GuidancePlan(d, self.tiles, "anima", (req,))
+        with self.assertRaises(UnsupportedRegional):
+            GuidancePlan(d, self.tiles, "sdxl",
+                         (GuidanceRequest("bad", "edge", "sdxl_controlnet",
+                                          image*float("nan"), 1, 0, 1),))
+
+    def test_verified_structural_png(self):
+        from PIL import Image
+        from coherent_diffusion.scheduler.guidance import verified_guidance_png
+        from coherent_diffusion.scheduler.regional import UnsupportedRegional
+        img = Image.new("RGB", (16, 16), (255, 0, 128))
+        io_out = io.BytesIO()
+        img.save(io_out, format="PNG")
+        raw = io_out.getvalue()
+        key = hashlib.sha256(raw).hexdigest()
+        x = verified_guidance_png(raw, sha256=key, width=16, height=16)
+        self.assertEqual(x.shape, (1, 3, 16, 16))
+        self.assertEqual(x[0, 0, 4, 4].item(), 1)
+        with self.assertRaises(UnsupportedRegional):
+            verified_guidance_png(raw, sha256="0"*64, width=16, height=16)
+
     def test_native_lora_state_scope_restoration_and_sha(self):
         from coherent_diffusion.forge_bridge.regional import NativeForgeLoRAs
         from coherent_diffusion.scheduler.regional import UnsupportedRegional
@@ -265,9 +318,110 @@ class ForgeWiringTests(unittest.TestCase):
             result = bridge.run_forge_regional_anima(object(), an, d, seed=10,
                                                      device="cpu", inference_dtype=torch.float32)
             self.assertEqual(result.mode, "direct")
-            self.assertNotIn(("encode", "one lighthouse, cinematic", 128), events)
+            self.assertIn(("encode", "one lighthouse, cinematic", 128), events)
             self.assertIn(("encode", "cinematic, specific", 128), events)
             self.assertGreater(len([e for e in events if e[0] == "cleanup"]), 0)
+
+
+
+    def test_native_masked_sdxl_condition_batches_and_state_guards(self):
+        from coherent_diffusion.scheduler.sdxl_sync import TilePlan
+        from coherent_diffusion.scheduler.quality import QualityPlan
+        from coherent_diffusion.forge_bridge import regional as bridge
+        from coherent_diffusion.scheduler.regional import UnsupportedRegional
+        p = TilePlan.build(128, 96, 64, 16, 16)
+        d = fixture()
+        d["regions"] = [region("a", [0, 0, .6, 1], prompt="left"),
+                        region("b", [.4, 0, .6, 1], prompt="right")]
+        events = []
+
+        class Fake:
+            def __init__(self, prompt):
+                self.prompt = prompt
+                self.positive = [dict(model_conds={"text": prompt})]
+                self.negative = [dict(model_conds={"text": "blur"})]
+            @classmethod
+            def from_prompts(cls, host, plan, **kw):
+                return cls(kw["prompt"])
+            def prepare(self):
+                events.append(("prepare", self.prompt))
+            def cleanup(self):
+                events.append(("cleanup", self.prompt))
+        def native(model, crop, sigma, uncond, cond, cfg, options, seed):
+            events.append(("inference", len(cond), cfg))
+            self.assertEqual(len(cond), 3)
+            self.assertAlmostEqual(sum(x["strength"] for x in cond), 1)
+            self.assertTrue(torch.allclose(
+                sum(x["mask"] for x in cond), torch.ones_like(cond[0]["mask"]), atol=1e-6))
+            self.assertEqual(uncond[0]["model_conds"]["text"], "blur")
+            return crop * 0.0
+        backend = types.ModuleType("backend")
+        backend.sampling = types.ModuleType("backend.sampling")
+        backend.sampling.sampling_function = types.ModuleType("backend.sampling.sampling_function")
+        backend.sampling.sampling_function.sampling_function_inner = native
+        host = SimpleNamespace(forge_objects=SimpleNamespace(
+            unet=SimpleNamespace(model=object())))
+        q = QualityPlan.build(p, mode="direct", refine_sigmas=(1, 0))
+        with patch.object(bridge, "ForgeSDXL", Fake), patch.dict(sys.modules, {
+                "backend": backend, "backend.sampling": backend.sampling,
+                "backend.sampling.sampling_function": backend.sampling.sampling_function}):
+            result = bridge.run_forge_regional_sdxl(
+                host, q, d, cfg=4, seed=12, device="cpu", text_mode="native_sdxl_masks")
+        self.assertEqual(result.mode, "direct")
+        self.assertEqual(len([x for x in events if x[0] == "inference"]), len(p.windows))
+        self.assertEqual(len([x for x in events if x[0] == "prepare"]), 1)
+        d["regions"][0]["negative_prompt"] = "different"
+        with self.assertRaises(UnsupportedRegional):
+            bridge.run_forge_regional_sdxl(
+                host, q, d, cfg=4, seed=12, device="cpu", text_mode="native_sdxl_masks")
+
+    def test_control_attachment_rollback_and_required_factory(self):
+        from contextlib import contextmanager
+        from coherent_diffusion.scheduler.sdxl_sync import TilePlan
+        from coherent_diffusion.scheduler.quality import QualityPlan
+        from coherent_diffusion.scheduler.guidance import GuidanceRequest
+        from coherent_diffusion.scheduler.regional import UnsupportedRegional
+        from coherent_diffusion.forge_bridge import regional as bridge
+        p = TilePlan.build(128, 96, 64, 16, 16)
+        q = QualityPlan.build(p, mode="direct", refine_sigmas=(1, 0))
+        d = fixture()
+        image = torch.zeros((1, 3, 96, 128), dtype=torch.float32)
+        guide = GuidanceRequest("layout", "color_layout", "sdxl_controlnet",
+                                image, .5, 0, 1)
+        events = []
+        class Fake:
+            def __init__(self):
+                self.positive = [{"model_conds": {}}]
+                self.negative = [{"model_conds": {}}]
+            @classmethod
+            def from_prompts(cls, host, plan, **kw):
+                return cls()
+            def prepare(self):
+                events.append("prepare")
+            def cleanup(self):
+                events.append("cleanup")
+            def predict(self, crop, sigma, tile):
+                self.assert_guidance = "control" in self.positive[0]
+                events.append("guided" if self.assert_guidance else "unguided")
+                return torch.zeros_like(crop)
+        @contextmanager
+        def factory(host, windows, state, tile):
+            self.assertEqual(windows[0].image.shape[-1], tile.read.width*8)
+            events.append("enter")
+            try:
+                yield SimpleNamespace(get_control=lambda *a: None)
+            finally:
+                events.append("exit")
+        with self.assertRaises(UnsupportedRegional):
+            bridge.run_forge_regional_sdxl(
+                object(), q, d, cfg=3, seed=1, device="cpu", guidance=(guide,))
+        with patch.object(bridge, "ForgeSDXL", Fake):
+            bridge.run_forge_regional_sdxl(
+                object(), q, d, cfg=3, seed=1, device="cpu",
+                guidance=(guide,), control_factory=factory)
+        self.assertIn("guided", events)
+        self.assertEqual(events.count("enter"), events.count("exit"))
+        self.assertIn("cleanup", events)
 
 
 if __name__ == "__main__":
