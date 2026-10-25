@@ -138,6 +138,7 @@ class QualityP04Tests(unittest.TestCase):
         self.assertEqual(clean,[True])
 
 
+@unittest.skipIf(torch is None, "P04 routing suite executes in pinned CPU torch CI job")
 class RoutingP04Tests(unittest.TestCase):
     def setUp(self):
         from coherent_diffusion.scheduler.sdxl_sync import TilePlan
