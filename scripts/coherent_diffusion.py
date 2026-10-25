@@ -15,7 +15,8 @@ from modules import scripts, script_callbacks
 from coherent_diffusion.forge_bridge import inspect_loaded_host, inspect_process
 from coherent_diffusion.forge_bridge.entrypoint import gradio_generate, cancel_generation
 from coherent_diffusion.forge_bridge.diagnostics import (
-    install_gradio_probe, record as debug_record, recent_text as debug_recent)
+    install_gradio_probe, record as debug_record, recent_text as debug_recent,
+    status_text as debug_status)
 install_gradio_probe()
 
 _LAST = None
@@ -71,6 +72,10 @@ def _generate_for_ui(*inputs):
             f'src="data:image/png;base64,{encoded}">'
             f'<p>Lossless full-size PNG saved to Forge outputs/coherent-diffusion/ '
             f'({image.width} × {image.height}).</p></div>'), report
+
+
+def _debug_poll():
+    return debug_recent(), debug_status()
 
 
 def editor_tab():
@@ -138,19 +143,23 @@ def editor_tab():
                 "of Forge to export these together with browser/Gradio event IDs. "
                 "Raw prompts, CRF documents, tokens and request payloads are not recorded. "
                 "The server journal is retained in Forge outputs/coherent-diffusion/diagnostics/.")
+            live_status = gr.Textbox(
+                label="Live generation progress — actual prediction evaluations (upper bound, not ETA)",
+                lines=2, interactive=False, elem_id="cd_debug_status",
+                value=debug_status())
             debug_log = gr.Textbox(
                 label="Live Python / Gradio events (JSON lines)", lines=11,
                 interactive=False, elem_id="cd_debug_backend",
                 value=debug_recent())
             if hasattr(gr, "Timer"):
                 debug_clock = gr.Timer(value=2.0, active=True)
-                debug_clock.tick(fn=debug_recent, inputs=[], outputs=[debug_log],
+                debug_clock.tick(fn=_debug_poll, inputs=[],
+                                 outputs=[debug_log, live_status],
                                  queue=False, show_progress="hidden")
             else:
-                # Offline minimal Forge UI stubs do not implement Timer.
-                # Real Forge Neo Gradio 4.40 does; keep manual access on stubs.
                 gr.Button("Refresh diagnostic log").click(
-                    fn=debug_recent, inputs=[], outputs=[debug_log], queue=False)
+                    fn=_debug_poll, inputs=[],
+                    outputs=[debug_log, live_status], queue=False)
     return [(panel, "Coherent Diffusion", "coherent_diffusion")]
 
 
