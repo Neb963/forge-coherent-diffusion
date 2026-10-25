@@ -59,6 +59,9 @@ class NativeForgeLoRAs:
             aliases = getattr(module, "available_network_aliases", None)
             if not isinstance(aliases, dict):
                 raise UnsupportedRegional("Forge LoRA registry unavailable")
+            source_objects = getattr(host, "forge_objects_original", None)
+            if source_objects is not None and getattr(source_objects, "unet", original_unet) is not original_unet:
+                raise UnsupportedRegional("Existing globally patched LoRAs prevent regional isolation")
             unet = original_unet
             names = set()
             for name, expected_sha, weight in adapters:
