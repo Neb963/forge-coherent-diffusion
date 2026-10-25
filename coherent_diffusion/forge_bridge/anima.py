@@ -45,9 +45,33 @@ def _check_unet_hooks(unet):
         return
     if not isinstance(options, dict):
         raise UnsupportedAnima("UNet model_options is unavailable or not a dict")
+    nested = options.get("transformer_options")
+    if set(options) == {"transformer_options"} and isinstance(nested, dict) and set(nested) == {"sampling_sigmas"}:
+        # A native/extension sampler can leave its scalar sigma timeline in
+        # transformer_options after normal txt2img. This is numerical schedule
+        # metadata, not a callable hook or a ControlNet attachment. P07 runs
+        # its own independently derived predictor sigmas; do not reuse these
+        # values or mutate the host model_options. Require a bounded finite
+        # 1-D floating sequence and accept no additional option keys.
+        import torch
+        timeline = nested["sampling_sigmas"]
+        if isinstance(timeline, torch.Tensor):
+            valid = (timeline.ndim == 1 and 2 <= timeline.numel() <= 1024
+                     and torch.is_floating_point(timeline)
+                     and bool(torch.isfinite(timeline).all()))
+        elif isinstance(timeline, (tuple, list)):
+            valid = (2 <= len(timeline) <= 1024
+                     and all(type(v) in (float, int) and math.isfinite(v)
+                             for v in timeline))
+        else:
+            valid = False
+        if not valid:
+            raise UnsupportedAnima(
+                "UNet transformer_options.sampling_sigmas has an invalid "
+                "type, shape, length or nonfinite value")
+        return
     keys = sorted(str(k)[:64] for k in options)[:24]
     extra = " (+ more)" if len(options) > len(keys) else ""
-    nested = options.get("transformer_options")
     nested_keys = (sorted(str(k)[:64] for k in nested)[:12]
                    if isinstance(nested, dict) else [])
     raise UnsupportedAnima(
