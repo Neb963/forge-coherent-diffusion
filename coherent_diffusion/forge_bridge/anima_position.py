@@ -77,10 +77,10 @@ def scoped_absolute_rope(core, tile, *, patch_spatial: int):
             or getattr(core, "patch_temporal", None) != 1):
         raise UnsupportedAnimaPosition("Unsupported Anima DiT model/patch layout")
     original = getattr(core, "prepare_embedded_sequence", None)
-    if not callable(original) or "prepare_embedded_sequence" in vars(core):
-        raise UnsupportedAnimaPosition("DiT position method already patched or unavailable")
     if getattr(core, "_coherent_rope_active", False):
         raise UnsupportedAnimaPosition("Concurrent/reentrant Anima RoPE context")
+    if not callable(original) or "prepare_embedded_sequence" in vars(core):
+        raise UnsupportedAnimaPosition("DiT position method already patched or unavailable")
     if tile.read.x0 % patch_spatial or tile.read.y0 % patch_spatial:
         raise UnsupportedAnimaPosition("Global read origin is not patch-aligned")
     setattr(core, "_coherent_rope_active", True)
