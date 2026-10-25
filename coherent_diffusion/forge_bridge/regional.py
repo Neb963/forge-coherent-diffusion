@@ -207,6 +207,10 @@ def run_forge_regional_anima(host, quality: AnimaQualityPlan, doc: dict, *,
     if device is None:
         from backend import memory_management
         device = memory_management.get_torch_device()
+    if inference_dtype is None:
+        import torch
+        model = getattr(getattr(getattr(host, "forge_objects", None), "unet", None), "model", None)
+        inference_dtype = getattr(model, "computation_dtype", torch.float32)
     manager = _RegionalRunner(
         host, quality, doc, model="anima", cfg=cfg, seed=seed, device=device,
         asset_bytes=asset_bytes, loras=loras or NativeForgeLoRAs(),
