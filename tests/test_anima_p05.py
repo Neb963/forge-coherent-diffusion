@@ -124,6 +124,31 @@ class AnimaFlowTests(unittest.TestCase):
                                    anchor_sigmas=[1,0],refine_sigmas=[1,0],
                                    global_interaction="fft")
 
+    def test_progressive_handoff_uses_native_flow_interpolation(self):
+        from coherent_diffusion.scheduler.anima_flow import (
+            AnimaQualityPlan, anima_noise, execute_anima,
+        )
+        sigma = 0.4
+        seed = 123
+        q = AnimaQualityPlan.build(
+            self.plan, patch_spatial=2, mode="progressive",
+            anchor_sigmas=[1, 0], refine_sigmas=[sigma, 0])
+        # A constant x0 predictor makes the anchor exactly 0.1 everywhere.
+        # Native constant-flow noise_scaling: (1-s)*latent + s*noise.
+        target_noise = anima_noise(
+            self.plan, seed ^ 0x1E3779B97F4A7C15, sigma)
+        expected = 0.1 * (1.0 - sigma) + target_noise
+        inspected = []
+        def pred(crop, s, tile, stage):
+            if stage == "refine":
+                r = tile.read
+                wanted = expected[..., r.y0:r.y1, r.x0:r.x1]
+                self.assertTrue(torch.allclose(crop, wanted, atol=1e-6))
+                inspected.append(tile.index)
+            return torch.full_like(crop, 0.1)
+        execute_anima(q, seed, pred)
+        self.assertEqual(len(inspected), len(self.plan.windows))
+
     def test_quality_partial_stage_failure_releases_once(self):
         from coherent_diffusion.scheduler.anima_flow import AnimaQualityPlan,execute_anima
         q=AnimaQualityPlan.build(self.plan,patch_spatial=2,mode="progressive",
