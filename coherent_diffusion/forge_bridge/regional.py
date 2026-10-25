@@ -215,11 +215,11 @@ class _RegionalRunner:
                     from coherent_diffusion.forge_bridge.diagnostics import record
                     record("model_prepare_begin", stage=stage, tile=tile.index)
                     adapter.prepare()
+                    self.active = adapter
+                    self.active_key = key
                     record("model_prepare_done", stage=stage, tile=tile.index)
                     if self.cancelled is not None and self.cancelled():
                         raise InterruptedError("Cancelled after model preparation")
-                    self.active = adapter
-                    self.active_key = key
                 except BaseException:
                     self.close()
                     raise
