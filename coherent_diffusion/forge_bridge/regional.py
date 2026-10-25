@@ -278,7 +278,7 @@ def run_forge_regional_sdxl(host, quality: QualityPlan, doc: dict, *, cfg: float
                             inference_dtype=None, cancelled=None, progress=None,
                             max_cpu_bytes=4 * 1024**3,
                             max_window_bytes=512 * 1024**2,
-                            max_forwards_per_window=16, guidance=(), control_factory=None,
+                            max_forwards_per_window=None, guidance=(), control_factory=None,
                             text_mode="prediction"):
     """Return P04 QualityResult; decoder remains ForgeSDXL.decode_tiled."""
     if not isinstance(quality, QualityPlan):
@@ -305,7 +305,7 @@ def run_forge_regional_anima(host, quality: AnimaQualityPlan, doc: dict, *,
                              cancelled=None, progress=None,
                              max_cpu_bytes=4 * 1024**3,
                              max_window_bytes=512 * 1024**2,
-                             max_forwards_per_window=16, guidance=(), control_factory=None):
+                             max_forwards_per_window=None, guidance=(), control_factory=None):
     """Return P05 AnimaQualityResult; preserve 5D frozen state and RoPE."""
     if not isinstance(quality, AnimaQualityPlan):
         raise ValueError("AnimaQualityPlan required")
