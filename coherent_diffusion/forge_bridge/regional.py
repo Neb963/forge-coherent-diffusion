@@ -15,6 +15,7 @@ from pathlib import Path
 from coherent_diffusion.forge_bridge.anima import ForgeAnima
 from coherent_diffusion.forge_bridge.sdxl import ForgeSDXL
 from coherent_diffusion.scheduler.anima_flow import AnimaQualityPlan, execute_anima
+from coherent_diffusion.scheduler.guidance import GuidancePlan
 from coherent_diffusion.scheduler.quality import QualityPlan, execute_quality
 from coherent_diffusion.scheduler.regional import (
     PredictionState, UnsupportedRegional, blended_prediction, compile_regional,
@@ -100,7 +101,8 @@ class NativeForgeLoRAs:
 
 class _RegionalRunner:
     def __init__(self, host, quality, doc, *, model, cfg, seed,
-                 device, asset_bytes, loras, cancelled, max_forwards_per_window):
+                 device, asset_bytes, loras, cancelled, max_forwards_per_window,
+                 guidance=(), control_factory=None):
         import torch
         self.host = host
         self.quality = quality
@@ -117,6 +119,12 @@ class _RegionalRunner:
         self.regional = compile_regional(
             doc, quality.target, asset_bytes=asset_bytes,
             max_forwards_per_window=max_forwards_per_window)
+        self.guidance = GuidancePlan(doc, quality.target, model, tuple(guidance),
+                                     asset_bytes=asset_bytes)
+        if self.guidance.requests and not callable(control_factory):
+            raise UnsupportedRegional(
+                "Structural guidance requires explicit supported native Forge control factory")
+        self.control_factory = control_factory
         # Anima Q4/SDXL global encoder is never replaced. Global objects
         # are placed only in progressive anchor; tiles receive shared style.
         self.anchor = PredictionState(_join(doc["global"]["scene_prompt"],
@@ -161,7 +169,31 @@ class _RegionalRunner:
             except BaseException:
                 self.close()
                 raise
-        return self.active.predict(crop, sigma, tile)
+        if stage == "anchor" or not self.guidance.requests:
+            return self.active.predict(crop, sigma, tile)
+        start_sigma = self.quality.refine_sigmas[0]
+        fraction = max(0.0, min(1.0, 1.0 - float(sigma)/float(start_sigma)))
+        windows = self.guidance.for_window(tile, fraction)
+        if not windows:
+            return self.active.predict(crop, sigma, tile)
+        # Factory owns native ControlNet/LLLite/Anima control activation, VRAM
+        # reservation and cleanup; do not load another control stack.
+        with self.control_factory(self.host, windows, state, tile) as native:
+            if not callable(getattr(native, "get_control", None)):
+                raise UnsupportedRegional("Factory did not supply a native Forge control")
+            original_positive, original_negative = self.active.positive, self.active.negative
+            if not isinstance(original_positive, (list, tuple)) or not isinstance(original_negative, (list, tuple)):
+                raise UnsupportedRegional("Unsupported Forge conditions for control attachment")
+            if not all(isinstance(x, dict) and "control" not in x for x in
+                       list(original_positive) + list(original_negative)):
+                raise UnsupportedRegional("Conflicting/unsupported native condition hooks")
+            self.active.positive = [dict(x, control=native) for x in original_positive]
+            self.active.negative = [dict(x, control=native) for x in original_negative]
+            try:
+                return self.active.predict(crop, sigma, tile)
+            finally:
+                self.active.positive = original_positive
+                self.active.negative = original_negative
 
     def predict(self, crop, sigma, tile, stage):
         if stage == "anchor":
@@ -176,7 +208,7 @@ def run_forge_regional_sdxl(host, quality: QualityPlan, doc: dict, *, cfg: float
                             inference_dtype=None, cancelled=None, progress=None,
                             max_cpu_bytes=4 * 1024**3,
                             max_window_bytes=512 * 1024**2,
-                            max_forwards_per_window=16):
+                            max_forwards_per_window=16, guidance=(), control_factory=None):
     """Return P04 QualityResult; decoder remains ForgeSDXL.decode_tiled."""
     if not isinstance(quality, QualityPlan):
         raise ValueError("SDXL QualityPlan required")
@@ -186,7 +218,8 @@ def run_forge_regional_sdxl(host, quality: QualityPlan, doc: dict, *, cfg: float
     manager = _RegionalRunner(
         host, quality, doc, model="sdxl", cfg=cfg, seed=seed, device=device,
         asset_bytes=asset_bytes, loras=loras or NativeForgeLoRAs(),
-        cancelled=cancelled, max_forwards_per_window=max_forwards_per_window)
+        cancelled=cancelled, max_forwards_per_window=max_forwards_per_window,
+        guidance=guidance, control_factory=control_factory)
     return execute_quality(
         quality, seed, manager.predict, device=device,
         inference_dtype=inference_dtype, cancelled=cancelled, progress=progress,
@@ -200,7 +233,7 @@ def run_forge_regional_anima(host, quality: AnimaQualityPlan, doc: dict, *,
                              cancelled=None, progress=None,
                              max_cpu_bytes=4 * 1024**3,
                              max_window_bytes=512 * 1024**2,
-                             max_forwards_per_window=16):
+                             max_forwards_per_window=16, guidance=(), control_factory=None):
     """Return P05 AnimaQualityResult; preserve 5D frozen state and RoPE."""
     if not isinstance(quality, AnimaQualityPlan):
         raise ValueError("AnimaQualityPlan required")
@@ -214,7 +247,8 @@ def run_forge_regional_anima(host, quality: AnimaQualityPlan, doc: dict, *,
     manager = _RegionalRunner(
         host, quality, doc, model="anima", cfg=cfg, seed=seed, device=device,
         asset_bytes=asset_bytes, loras=loras or NativeForgeLoRAs(),
-        cancelled=cancelled, max_forwards_per_window=max_forwards_per_window)
+        cancelled=cancelled, max_forwards_per_window=max_forwards_per_window,
+        guidance=guidance, control_factory=control_factory)
     return execute_anima(
         quality, seed, manager.predict, device=device,
         inference_dtype=inference_dtype, cancelled=cancelled, progress=progress,
