@@ -72,7 +72,7 @@ def verified_guidance_png(raw: bytes, *, sha256: str, width: int, height: int):
 
 class GuidancePlan:
     def __init__(self, doc: dict, plan: TilePlan, model: str, requests=(), *,
-                 asset_bytes=None, max_sources=4, max_pixels=1_048_576):
+                 asset_bytes=None, max_sources=4, max_pixels=4_194_304):
         validate_crf(doc, target_canvas=(plan.width_px, plan.height_px))
         if model not in _ALLOWED or not isinstance(plan, TilePlan):
             raise UnsupportedRegional("Unknown model/geometry for guidance")
