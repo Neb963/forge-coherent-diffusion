@@ -69,12 +69,14 @@ class TilePlan:
     @classmethod
     def build(cls, width_px: int, height_px: int, tile_px: int,
               overlap_px: int = 128, halo_px: int = 64, *,
-              scale: int = 8, max_windows: int = 4096) -> "TilePlan":
-        values = (width_px, height_px, tile_px, overlap_px, halo_px, scale, max_windows)
+              scale: int = 8, max_windows: int | None = None) -> "TilePlan":
+        values = (width_px, height_px, tile_px, overlap_px, halo_px, scale)
         if any(type(v) is not int for v in values):
             raise ValueError("Tile geometry requires integer pixel dimensions")
         if min(width_px, height_px, tile_px, scale, max_windows) <= 0:
             raise ValueError("Positive image dimensions, tile and scale required")
+        if max_windows is not None and (type(max_windows) is not int or max_windows < 1):
+            raise ValueError("Explicit positive tile-count allowance required")
         if overlap_px < 0 or halo_px < 0 or overlap_px >= tile_px:
             raise ValueError("Require 0 <= overlap < tile and halo >= 0")
         if any(n % scale for n in (width_px, height_px, tile_px, overlap_px, halo_px)):
@@ -84,7 +86,7 @@ class TilePlan:
         if size <= overlap:
             raise ValueError("Overlap consumes tile")
         xs, ys = _starts(w, size, overlap), _starts(h, size, overlap)
-        if len(xs) * len(ys) > max_windows:
+        if max_windows is not None and len(xs) * len(ys) > max_windows:
             raise ValueError("Tile count exceeds declared budget")
         windows = []
         for y in ys:
