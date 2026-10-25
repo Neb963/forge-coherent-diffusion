@@ -4,6 +4,7 @@ P07 UI invocation is opt-in. Native Forge sampler, checkpoint loader, and
 existing Anima Q4 encoder are never replaced by registering this extension.
 """
 import gradio as gr
+import json
 from pathlib import Path
 from html import escape
 from modules import scripts, script_callbacks
@@ -72,6 +73,11 @@ def editor_iframe():
             f'srcdoc="{escape(page, quote=True)}"></iframe>')
 
 
+def _generate_for_ui(*inputs):
+    image, evidence = gradio_generate(*inputs)
+    return image, json.dumps(evidence, ensure_ascii=False, indent=2)
+
+
 def editor_tab():
     """Full-width editor and a scoped Gradio 4 generation surface."""
     with gr.Blocks(analytics_enabled=False, js=_BRIDGE_JS) as panel:
@@ -113,9 +119,9 @@ def editor_tab():
                 cancelled = gr.Textbox(label="Cancellation", interactive=False, scale=2)
             with gr.Row():
                 output = gr.Image(label="Generated image", type="pil", interactive=False)
-                result = gr.JSON(label="Execution evidence / errors")
+                result = gr.Textbox(label="Execution evidence / errors", lines=10, interactive=False)
             job = submit.click(
-                fn=gradio_generate,
+                fn=_generate_for_ui,
                 inputs=[scene, archive, prompt, negative, model, mode, width, height,
                         tile, overlap, halo, steps, cfg, seed, cpu_mib, window_mib],
                 outputs=[output, result],
