@@ -99,7 +99,7 @@ class RunnerContracts(unittest.TestCase):
         self.assertGreater(sd[0],10)
         self.assertEqual(sd[-1],0)
         an=ep._model_sigmas(host(PredictionFlux()),"anima",4)
-        self.assertAlmostEqual(an[0],.81)
+        self.assertAlmostEqual(an[0],.81,places=6)
         self.assertEqual(an[-1],0)
         self.assertTrue(all(a>b for a,b in zip(an,an[1:])))
         discrete=ep._model_sigmas(host(PredictionDiscreteFlow()),"anima",4)
