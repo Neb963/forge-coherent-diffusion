@@ -52,7 +52,7 @@
  <div class="brand"><div class="logo"><svg class="svgicon"><use href="#i-spark"></use></svg></div><div><div class="brand-title">Coherent Diffusion</div><div class="brand-sub">FORGE NEO EXTENSION <span style="color:#8084f9">·</span> UI CONCEPT</div></div></div>
  <div class="project-chip">Coastal daylight study <span style="color:#657082"> / </span> Untitled scene</div>
  <nav class="nav" aria-label="Workspace views"><button data-nav="editor" class="active">Editor</button><button data-nav="global">Prompts</button><button data-nav="diagnostics">Diagnostics</button></nav>
- <div class="top-actions"><span class="sim-label" title="Editing only; inference backend is not connected">P02 · EDITOR ONLY</span><button class="btn hide-tight" id="saveBtn"><svg class="svgicon small"><use href="#i-check"/></svg>Save draft</button><button class="btn hide-tight" id="resetBtn" title="Start a blank composition (confirmation required)">New scene</button><button class="btn hide-tight" id="exportBtn"><svg class="svgicon small"><use href="#i-download"/></svg>Export CRF</button><button class="btn" id="importBtn"><svg class="svgicon small"><use href="#i-upload"/></svg>Import</button><span class="separator"></span><button class="btn primary" id="generateBtn"><svg class="svgicon"><use href="#i-spark"/></svg>Generate image</button></div>
+ <div class="top-actions"><span class="sim-label" title="Runs through installed Forge model when supported; live acceptance pending">P07 · FORGE INTEGRATION</span><button class="btn hide-tight" id="saveBtn"><svg class="svgicon small"><use href="#i-check"/></svg>Save draft</button><button class="btn hide-tight" id="resetBtn" title="Start a blank composition (confirmation required)">New scene</button><button class="btn hide-tight" id="exportBtn"><svg class="svgicon small"><use href="#i-download"/></svg>Export CRF</button><button class="btn" id="importBtn"><svg class="svgicon small"><use href="#i-upload"/></svg>Import</button><span class="separator"></span><button class="btn primary" id="generateBtn"><svg class="svgicon"><use href="#i-spark"/></svg>Generate image</button></div>
 </header>
 <div class="model-strip">
   <div class="field model"><label for="modelSelect">MODEL</label><select id="modelSelect"><option value="sdxl">SDXL · Photographic fine-tune</option><option value="anima">Anima · DiT</option></select></div>
@@ -91,7 +91,7 @@
    <img class="photo-preview" id="scenePhoto" alt="Reference photo of a shoreline" src="data:,">
    <canvas class="weight-map" id="weightMap" width="128" height="96" aria-label="Approximate relative influence visualization"></canvas>
    <svg class="overlay" id="overlay" viewBox="0 0 1000 750" preserveAspectRatio="none"></svg>
-   <div class="watermark" id="photoTag">REFERENCE · EDITOR ONLY</div>
+   <div class="watermark" id="photoTag">REFERENCE · NOT GENERATED</div>
   </div><div class="canvas-border"></div><span class="corner-marker tl"></span><span class="corner-marker br"></span></div></div>
  <div class="stage-hint hidden" id="stageHint">Click to place points · double-click to finish polygon</div>
  </div>
@@ -638,7 +638,45 @@ function openImport(){
  };
 }
 function openAdvanced(){openModal('Generation settings · prototype',`<p class="modal-sub">These controls illustrate the planned generation interface. They are not connected to Forge Neo in this HTML prototype.</p><div class="statlist"><div class="field-wrap"><label>Sampling steps</label><input type="number" value="30" min="1" max="150"></div><div class="field-wrap"><label>CFG guidance</label><input type="number" value="4.5" min="0" max="30" step=".5"></div><div class="field-wrap"><label>Tile overlap</label><select><option>Auto · adaptive</option><option>64 px</option><option>128 px</option><option>192 px</option></select></div><div class="field-wrap"><label>Memory policy</label><select><option>Auto (sequential tiles)</option><option>Conservative · 4 GB target</option><option>Performance</option></select></div></div><div class="section-info" style="margin-top:16px">The real extension will perform capability checks for SDXL/Anima, sampler compatibility, text encoder availability and LoRA isolation before generation.</div>`,`<button class="btn primary" id="closeAdvanced">Close</button>`);$('closeAdvanced').onclick=closeModal}
-function openGenerate(){openModal('Generation not connected',`<div class="inspector-top" style="margin-bottom:16px"><div class="symbol">${icon('spark')}</div><div><div class="title">Coherent ${settings.strategy==='progressive'?'Progressive':'Direct Tiled'}</div><div class="subtitle">${settings.model==='sdxl'?'SDXL':'Anima'} · ${scene.canvas.width} × ${scene.canvas.height} · ${scene.regions.filter(r=>r.enabled).length} enabled regions</div></div></div><p class="modal-sub">The composition editor runs locally. Forge Neo sampling is not connected in P02. Generation is unavailable until the later backend integration phases.</p><div class="section-info">Editor capabilities: region drawing and transforms, layers, masks, prompt and LoRA references, visualization, JSON import/export, and browser-local draft recovery.</div>`,`<button class="btn primary" id="genModalClose">Continue editing</button>`);$('genModalClose').onclick=closeModal}
+function base64Bytes(bytes){
+ if(bytes.length>24*1024*1024)throw Error('CRF archive exceeds local transfer budget');
+ const parts=[];
+ for(let i=0;i<bytes.length;i+=32768)parts.push(String.fromCharCode(...bytes.subarray(i,i+32768)));
+ return btoa(parts.join(''));
+}
+async function openGenerate(){
+ save();
+ if(window.parent===window){
+  openModal('Forge Neo host required',
+   '<p class="modal-sub">Open this editor in the Coherent Diffusion tab in Forge Neo to run the installed model. Standalone previews cannot generate images.</p>',
+   '<button class="btn primary" id="genModalClose">Continue editing</button>');
+  $('genModalClose').onclick=closeModal;
+  return;
+ }
+ try{
+  const {doc,images}=await buildExport(),enc=new TextEncoder();
+  let json=JSON.stringify(doc),archive='';
+  if(images.size){
+   const zip=zipEncode([['composition.json',enc.encode(json)],
+      ['manifest.json',enc.encode(JSON.stringify({format:'coherent-regions-archive',version:1}))],...images]);
+   archive=base64Bytes(zip);
+   json='';
+  }
+  const parentOrigin=window.parent.location.origin;
+  if(!parentOrigin||parentOrigin==='null')throw Error('Trusted Forge origin unavailable');
+  window.parent.postMessage({
+   kind:'coherent-diffusion-generate-v1',scene:json,archive,
+   settings:{model:settings.model,strategy:settings.strategy,
+      width:doc.canvas.width,height:doc.canvas.height,tile:settings.tile}
+  },parentOrigin);
+  toast('CRF sent to Forge generation form',false,'Run status and errors appear under the editor');
+ }catch(e){toast('Generation transfer blocked: '+e.message,true)}
+}
+window.addEventListener('message',e=>{
+ if(e.source!==window.parent)return;
+ if(e.data?.kind==='coherent-diffusion-transfer-error-v1')
+   toast('Forge form rejected transfer: '+String(e.data.detail||'unknown error'),true);
+});
 // UI events
 $('modelSelect').onchange=e=>{settings.model=e.target.value;saveSoon();render();toast('Model preset selected',false,settings.model==='anima'?'Anima Q4 route requires runtime compatibility verification':'SDXL backend design view')};
 $('strategySelect').onchange=e=>{settings.strategy=e.target.value;saveSoon();if(settings.strategy==='direct')toast('Direct tiled is experimental',false,'Global coherence without a progressive anchor is not validated')};
