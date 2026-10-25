@@ -178,6 +178,29 @@ class QualityP04Tests(unittest.TestCase):
                          cancelled=lambda: True,cleanup=lambda: clean.append(True))
         self.assertEqual(clean,[True])
 
+    def test_tampered_immutable_quality_plans_fail_without_model_calls(self):
+        from dataclasses import replace
+        q=self.QualityPlan.build(self.plan,mode="progressive",
+                                 anchor_sigmas=[1,0],refine_sigmas=[1,0])
+        calls=[]
+        invalid=[
+            replace(q,mode="unsupported"),
+            replace(q,global_interaction="unverified-fft"),
+            replace(q,anchor=None),
+            replace(q,anchor_sigmas=[1,1,0]),
+            replace(q,anchor_factor=4),
+            replace(q,anchor=replace(q.anchor,windows=())),
+        ]
+        direct=self.QualityPlan.build(self.plan,mode="direct",refine_sigmas=[1,0])
+        invalid.append(replace(direct,anchor=q.anchor))
+        for candidate in invalid:
+            with self.subTest(candidate=candidate.mode):
+                with self.assertRaises(ValueError):
+                    self.execute(candidate,2,lambda *args: calls.append(True))
+        with self.assertRaises(ValueError):
+            self.execute(direct,-1,lambda *args: calls.append(True))
+        self.assertEqual(calls,[])
+
     def test_anchor_memory_failures_and_nonfinite_model_output(self):
         q=self.QualityPlan.build(self.plan,mode="progressive",
                                  anchor_sigmas=[1,0],refine_sigmas=[1,0])
