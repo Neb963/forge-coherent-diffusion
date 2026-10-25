@@ -186,6 +186,8 @@ class _RegionalRunner:
                     getattr(self.cached[key], "positive", None),
                     getattr(self.cached[key], "negative", None))
                 record("conditioning_done", stage=stage, tile=tile.index)
+                if self.cancelled is not None and self.cancelled():
+                    raise InterruptedError("Cancelled after regional text encoding")
             adapter = self.cached[key]
             # A change in text conditioning is NOT a model-patcher change.
             # Keep the already prepared Anima UNet resident across prompt-only
@@ -214,6 +216,8 @@ class _RegionalRunner:
                     record("model_prepare_begin", stage=stage, tile=tile.index)
                     adapter.prepare()
                     record("model_prepare_done", stage=stage, tile=tile.index)
+                    if self.cancelled is not None and self.cancelled():
+                        raise InterruptedError("Cancelled after model preparation")
                     self.active = adapter
                     self.active_key = key
                 except BaseException:
