@@ -27,8 +27,16 @@ const assert=require('node:assert/strict');
    assert.equal(await frame.locator('#layerList .layer').count(),5,'P02 editor mounted under Gradio');
    await frame.locator('#addRegionBtn').click();
    assert.equal(await frame.locator('#layerList .layer').count(),6,'Gradio-mounted iframe accepts interactions');
+   // Actual editor-to-Gradio bridge, not a simulated frame-alone editor event.
+   await frame.locator('#generateBtn').click();
+   await page.waitForFunction(() => {
+     const input=document.querySelector('#cd_scene_json textarea');
+     return Boolean(input && input.value.includes('"coherent-regions"'));
+   }, null, {timeout:20000});
+   assert.equal(await page.locator('#cd_submit button').count(),1,
+     'one native Gradio Generate control is registered');
    assert.deepEqual(errors,[],'no parent page errors');
-   console.log('P02 actual Gradio 4 mount PASS');
+   console.log('P07 Gradio mount/editor transfer PASS (not model inference)');
   }finally{await browser.close()}
  }finally{server.kill('SIGTERM')}
 })().catch(e=>{console.error(e);process.exit(1)});
