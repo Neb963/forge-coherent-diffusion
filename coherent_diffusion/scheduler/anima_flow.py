@@ -36,7 +36,7 @@ def validate_anima_tiles(plan: TilePlan, *, patch_spatial: int) -> None:
         raise ValueError("Unsupported Anima DiT spatial patch size")
     expected = TilePlan.build(plan.width_px, plan.height_px, plan.tile_px,
                               plan.overlap_px, plan.halo_px, scale=8)
-    if tuple(sorted(expected.windows)) != tuple(sorted(plan.windows)):
+    if len(expected.windows) != len(plan.windows) or set(expected.windows) != set(plan.windows):
         raise ValueError("Incomplete/altered Anima windows")
     for t in plan.windows:
         r = t.read
