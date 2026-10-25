@@ -101,5 +101,44 @@ class ResidentAnimaPromptStates(unittest.TestCase):
                          ["prepare","cleanup","prepare","cleanup"])
 
 
+    def test_cancel_during_model_prepare_cleans_up(self):
+        from coherent_diffusion.forge_bridge.regional import _RegionalRunner
+        from coherent_diffusion.forge_bridge.anima import ForgeAnima
+        from coherent_diffusion.scheduler.regional import PredictionState
+        events=[]
+        cancel=[False]
+        class SlowAdapter:
+            positive="encoded"
+            negative="encoded-negative"
+            def prepare(self):
+                events.append("prepared")
+                cancel[0]=True
+            def cleanup(self):
+                events.append("cleanup")
+        runner=_RegionalRunner.__new__(_RegionalRunner)
+        runner.model="anima"
+        runner.host=object()
+        runner.cfg=1.0
+        runner.seed=1
+        runner.device="cpu"
+        runner.cached={}
+        runner.condition_cache={}
+        runner.active=None
+        runner.active_scope=None
+        runner.active_key=None
+        runner.cancelled=lambda: cancel[0]
+        runner.guidance=types.SimpleNamespace(requests=[])
+        runner.quality=types.SimpleNamespace(target=object(),anchor=None)
+        runner.loras=types.SimpleNamespace()
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.object(d,"_data_dir",return_value=Path(folder)), \
+             patch.object(ForgeAnima,"from_prompts",return_value=SlowAdapter()):
+            with self.assertRaisesRegex(InterruptedError,"Cancelled after model preparation"):
+                runner.predict_state(PredictionState("test","",()),
+                                     None,.5,types.SimpleNamespace(index=0),"direct")
+        self.assertEqual(events,["prepared","cleanup"])
+        self.assertIsNone(runner.active)
+
+
 if __name__=="__main__":
     unittest.main()
