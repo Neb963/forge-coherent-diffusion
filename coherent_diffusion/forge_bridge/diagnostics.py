@@ -7,6 +7,7 @@ The Gradio probe is read-only: it re-raises every original exception unchanged.
 from __future__ import annotations
 
 import functools
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -23,8 +24,91 @@ _ALLOWED = frozenset({
     "type", "backend_fn", "fn_index", "targets", "kind",
     "elapsed_ms", "success", "partial_image", "model_type",
     "route", "api_name", "pid", "component_ids", "handler",
+    "stage", "tile", "evaluation", "upper_bound", "completed", "step",
+    "step_total", "region_states", "window_total",
 })
 _INSTALLED = False
+_PROGRESS = {"active": False, "status": "idle", "completed": 0, "evaluation": 0,
+             "upper_bound": 0, "stage": None, "tile": None, "start": None,
+             "last": None, "sigma": None, "step": 0}
+
+
+def start_progress(*, upper_bound: int, window_total: int,
+                   region_states: int) -> None:
+    """Upper bound counts tile/state evaluations, not true model forwards."""
+    with _LOCK:
+        _PROGRESS.update(active=True, status="starting", completed=0, evaluation=0,
+                         upper_bound=max(0,int(upper_bound)), stage=None,
+                         tile=None, step=0, sigma=None, start=time.monotonic(),
+                         last=time.monotonic())
+    record("progress_plan", upper_bound=upper_bound, window_total=window_total,
+           region_states=region_states)
+
+
+def finish_progress(*, success: bool) -> None:
+    with _LOCK:
+        _PROGRESS["active"] = False
+        _PROGRESS["status"] = "complete" if success else "stopped_or_error"
+        _PROGRESS["last"] = time.monotonic()
+    record("progress_finished", success=success,
+           evaluation=_PROGRESS["evaluation"], completed=_PROGRESS["completed"])
+
+
+def step_progress(stage: str, info) -> None:
+    record("step_completed", stage=stage, step=info.index+1,
+           window_total=info.windows)
+
+
+@contextmanager
+def timed_prediction(*, stage: str, tile: int, sigma: float):
+    """Capture what the denoiser is doing before a potentially slow GPU call."""
+    begun = time.monotonic()
+    with _LOCK:
+        if _PROGRESS.get("sigma") != (stage, sigma):
+            _PROGRESS["sigma"] = (stage, sigma)
+            _PROGRESS["step"] = _PROGRESS.get("step",0)+1
+        _PROGRESS["evaluation"] = _PROGRESS.get("evaluation",0)+1
+        i = _PROGRESS["evaluation"]
+        step = _PROGRESS["step"]
+        _PROGRESS.update(stage=stage, tile=tile, status="prediction_started",
+                         last=begun)
+    record("prediction_begin", evaluation=i, stage=stage, tile=tile, step=step)
+    try:
+        yield
+    except BaseException as exc:
+        record("prediction_failure", evaluation=i, stage=stage, tile=tile,
+               type=type(exc).__name__, elapsed_ms=(time.monotonic()-begun)*1000)
+        raise
+    else:
+        duration=(time.monotonic()-begun)*1000
+        with _LOCK:
+            _PROGRESS["completed"]=_PROGRESS.get("completed",0)+1
+            n=_PROGRESS["completed"]
+            _PROGRESS.update(last=time.monotonic(), status="prediction_completed")
+        record("prediction_end", evaluation=i, completed=n, stage=stage,
+               tile=tile, step=step, elapsed_ms=duration)
+        # Console progress at a bounded cadence; server panel logs EVERY eval.
+        if i == 1 or i % 10 == 0 or duration >= 30000:
+            print("[Coherent Diffusion] prediction {0} completed: stage={1} "
+                  "step={2} tile={3}, last={4:.1f}s, upper-bound={5}".format(
+                      n, stage, step, tile, duration/1000,
+                      _PROGRESS["upper_bound"]), flush=True)
+
+
+def status_text() -> str:
+    with _LOCK:
+        p=dict(_PROGRESS)
+    if p["start"] is None:
+        return "Idle — no coordinated generation started this process"
+    now=time.monotonic()
+    elapsed=round(now-p["start"],1)
+    ago=round(now-p["last"],1) if p["last"] is not None else 0
+    state="RUNNING" if p["active"] else p["status"].upper()
+    upper=p["upper_bound"]
+    approximate=f" / at most {upper} evaluations" if upper else ""
+    return (f"{state} | {p['completed']} finished{approximate} | "
+            f"stage={p['stage']} | step={p['step']} | tile={p['tile']} | "
+            f"last={p['status']} {ago}s ago | elapsed={elapsed}s")
 
 
 def _data_dir() -> Path:
@@ -68,6 +152,14 @@ def record(event: str, **fields) -> None:
         line = json.dumps(row, ensure_ascii=True, separators=(",", ":")) + "\n"
         with _LOCK:
             _EVENTS.append(row)
+            if _PROGRESS["active"] and event in (
+                    "conditioning_begin", "conditioning_done",
+                    "model_prepare_begin", "model_prepare_done",
+                    "generation_stage", "decode_begin", "decode_done"):
+                _PROGRESS["status"] = event
+                _PROGRESS["last"] = time.monotonic()
+                if "stage" in row: _PROGRESS["stage"] = row["stage"]
+                if "tile" in row: _PROGRESS["tile"] = row["tile"]
             path = diagnostic_file()
             if path.exists() and path.stat().st_size + len(line.encode()) > _MAX_FILE_BYTES:
                 previous = path.with_suffix(".jsonl.1")
