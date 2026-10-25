@@ -17,7 +17,8 @@ def members(root=ROOT):
     base = Path(root)
     paths = [base / rel for rel in STATIC]
     for sub, extensions in (("coherent_diffusion", {".py", ".json", ".html"}),
-                            ("scripts", {".py"})):
+                            ("scripts", {".py"}),
+                            ("javascript", {".js"})):
         paths.extend(p for p in (base / sub).rglob("*")
                      if p.is_file() and p.suffix in extensions
                      and "__pycache__" not in p.parts)
@@ -27,7 +28,9 @@ def members(root=ROOT):
     names = [p.relative_to(base).as_posix() for p in paths]
     if len(names) != len(set(names)):
         raise ValueError("Duplicate release member")
-    if "scripts/coherent_diffusion.py" not in names or "coherent_diffusion/editor/index.html" not in names:
+    if ("scripts/coherent_diffusion.py" not in names or
+        "coherent_diffusion/editor/index.html" not in names or
+        "javascript/coherent_diffusion_diagnostics.js" not in names):
         raise ValueError("Missing installed Forge extension entrypoint/frontend")
     return sorted(zip(names, paths))
 
