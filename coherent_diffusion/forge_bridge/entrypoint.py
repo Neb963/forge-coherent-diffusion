@@ -331,6 +331,19 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
     if not _JOB_LOCK.acquire(blocking=False):
         raise UnsupportedGeneration("Another Coherent Diffusion job is running")
     _JOB_CANCEL.clear()
+    succeeded = False
+    from .diagnostics import (
+        start_progress, finish_progress, step_progress, record as debug_record)
+    refine_windows = len(plan.quality.target.windows)
+    anchor_steps = (len(plan.quality.anchor_sigmas)-1
+                    if plan.quality.anchor_sigmas is not None else 0)
+    refine_steps = len(plan.quality.refine_sigmas)-1
+    active_regions = sum(1 for r in plan.document["regions"]
+                         if r.get("enabled", True) and r["blend"]["weight"] > 0)
+    state_upper = active_regions + 1 if plan.has_regions else 1
+    upper = anchor_steps + refine_steps * refine_windows * state_upper
+    start_progress(upper_bound=upper, window_total=refine_windows,
+                   region_states=state_upper)
     try:
         from coherent_diffusion.forge_bridge.quality import run_forge_sdxl_quality
         from coherent_diffusion.forge_bridge.anima import run_forge_anima_quality
@@ -342,8 +355,12 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
 
         if stopped():
             raise InterruptedError("Generation interrupted before sampling")
+        def report_step(stage, info):
+            step_progress(stage, info)
+            if progress is not None:
+                progress(stage, info)
         keyword = dict(seed=plan.seed, cfg=plan.cfg, cancelled=stopped,
-                       progress=progress, max_cpu_bytes=plan.max_cpu_bytes,
+                       progress=report_step, max_cpu_bytes=plan.max_cpu_bytes,
                        max_window_bytes=plan.max_window_bytes)
         if plan.has_regions:
             if plan.family == "sdxl":
@@ -366,7 +383,9 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
                 result = run_forge_anima_quality(host, plan.quality, **kwargs)
         if stopped():
             raise InterruptedError("Generation cancelled before decode")
+        debug_record("decode_begin", stage="decode")
         pixels = _decode(host, plan, result.latent)
+        debug_record("decode_done", stage="decode")
         if stopped():
             raise InterruptedError("Generation cancelled after decode")
         from PIL import Image
@@ -414,8 +433,10 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
             "workspace_limits_bytes": {"cpu": plan.max_cpu_bytes,
                                        "latent_window": plan.max_window_bytes},
         }
+        succeeded = True
         return image, meta
     finally:
+        finish_progress(success=succeeded)
         _JOB_CANCEL.clear()
         _JOB_LOCK.release()
 
