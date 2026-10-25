@@ -29,10 +29,23 @@ const assert=require('node:assert/strict');
    assert.equal(await frame.locator('#layerList .layer').count(),6,'Gradio-mounted iframe accepts interactions');
    // Actual editor-to-Gradio bridge, not a simulated frame-alone editor event.
    await frame.locator('#generateBtn').click();
-   await page.waitForFunction(() => {
-     const input=document.querySelector('#cd_scene_json textarea');
-     return Boolean(input && input.value.includes('"coherent-regions"'));
-   }, null, {timeout:20000});
+   try {
+     await page.waitForFunction(() => {
+       const input=document.querySelector('#cd_scene_json textarea');
+       return Boolean(input && input.value.includes('"coherent-regions"'));
+     }, null, {timeout:7000});
+   } catch(error) {
+     const state = await page.evaluate(() => ({
+       bridgeInstalled: Boolean(window.__coherentDiffusionBridgeInstalled),
+       inputs: [...document.querySelectorAll('[id^="cd_"]')].map(e => ({
+         id:e.id, tag:e.tagName, textareaCount:e.querySelectorAll('textarea').length,
+         value:(e.querySelector('textarea,input')?.value||'').slice(0,100)
+       })).slice(0,12)
+     }));
+     const toasts = await frame.locator('#toasts').innerText();
+     console.error('P07 bridge diagnostics',JSON.stringify({state,toasts,errors}));
+     throw error;
+   }
    assert.equal(await page.locator('#cd_submit button').count(),1,
      'one native Gradio Generate control is registered');
    assert.deepEqual(errors,[],'no parent page errors');
