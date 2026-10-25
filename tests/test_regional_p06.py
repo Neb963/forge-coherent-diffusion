@@ -232,6 +232,41 @@ class RegionalTests(unittest.TestCase):
         self.assertEqual(events.count("enter"), events.count("exit"))
         self.assertEqual(events.count("prepare"), events.count("cleanup"))
 
+
+    def test_one_global_step_multiwindow_order_independence_sdxl_anima(self):
+        from dataclasses import replace
+        from coherent_diffusion.scheduler.regional import blended_prediction
+        from coherent_diffusion.scheduler.sdxl_sync import seeded_noise, synchronized_euler
+        from coherent_diffusion.scheduler.anima_flow import anima_noise, synchronized_flow
+        d = fixture()
+        d["regions"] = [region("left", [0, 0, .75, 1], prompt="left"),
+                        region("right", [.25, 0, .75, 1], prompt="right")]
+        rp = self.compile(d)
+        p = self.tiles
+        reversed_plan = replace(p, windows=tuple(reversed(p.windows)))
+        by_state = lambda state: 2 if "left" in state.prompt else (-1 if "right" in state.prompt else 0)
+        global_delta = sum(row.weight * by_state(row.state) for row in rp.states)
+        def prediction(state, crop, sigma, tile, stage):
+            self.assertEqual(stage, "direct")
+            return crop * .25 + by_state(state)
+        def apply(crop, sigma, tile):
+            return blended_prediction(rp, tile, crop, sigma, "direct", prediction)
+
+        a = seeded_noise(p, 992)
+        first = synchronized_euler(p, a, (1, 0), apply)
+        shuffled = synchronized_euler(reversed_plan, a, (1, 0), apply)
+        expected = a * .25 + global_delta.view(1, 1, p.height, p.width)
+        self.assertTrue(torch.equal(first.latent, shuffled.latent))
+        self.assertTrue(torch.allclose(first.latent, expected, atol=1e-5))
+        self.assertEqual(first.steps[0].windows, len(p.windows))
+
+        b = anima_noise(p, 992, 1)
+        anima1 = synchronized_flow(p, b, (1, 0), apply, patch_spatial=2)
+        anima2 = synchronized_flow(reversed_plan, b, (1, 0), apply, patch_spatial=2)
+        expected_anima = b * .25 + global_delta.view(1, 1, 1, p.height, p.width)
+        self.assertTrue(torch.equal(anima1.latent, anima2.latent))
+        self.assertTrue(torch.allclose(anima1.latent, expected_anima, atol=1e-5))
+
     def test_unsafe_lora_intents_and_groups(self):
         from coherent_diffusion.scheduler.regional import UnsupportedRegional
         d = fixture()
