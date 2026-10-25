@@ -268,3 +268,18 @@ Actual user-host evidence: live Script.process(p) probe confirms real Anima, FLO
 - [x] GitHub Actions run 40211845801 at exact candidate code commit 426858ec: cpu-tests PASS, tensor-sdxl-offline PASS with new sigma guards, browser-editor PASS. GitHub-built ZIP integrity and packaged Anima blob SHA verified.
 - [ ] Verify actual small Anima/Q4 GPU generation using patched candidate, capture new exact errors or output and measured memory.
 - [ ] Mandatory final UI acceptance remains OPEN: Forge-native model selection/loading on Coherent Diffusion Generate without a separate txt2img generation; finish full integration beyond prototype UI. P07 NOT ACCEPTED and PR stays draft; do not claim real SDXL/Anima success or merge.
+
+### P07 live failure cluster — regional LoRA, native ownership/loading, SDXL preflight (2026-10-25)
+
+**User-provided live evidence:** native model is Anima FLOW/WAN with detectable GGUF text-encoder parameters, no ControlNet attachment and no extra concatenated conditioning. After sigma metadata gate repair, a generation from the editor is refused because the CRF contains an active regional LoRA reference. The first-party P02 editor starter composition itself includes a fictitious active `example_local_texture_lora`. The current P07 entrypoint rejects every enabled region with any LoRA list, including zero-weight/inactive entries; no generation was attempted. This is an integration design gap, not a GPU/Anima failure.
+
+**Additional source-confirmed defects (Forge Neo branch neo):** (1) upstream `backend.patcher.base.ModelPatcher` initializes SDXL `model_options={"transformer_options":{}}`, so existing SDXL guard would reject a pristine model; (2) Forge's ordinary txt2img uses `modules.call_queue.queue_lock` and native `modules_forge.main_entry.refresh_model_loading_parameters` plus `modules.sd_models.forge_model_reload`, while P07 Gradio callback neither owns this global job gate nor triggers the native loader; (3) current region test sample has an invented LoRA name that cannot be resolved locally. Prior offline fake-host tests did not expose these.
+
+**Implementation and verification plan — P07 only:**
+- [ ] Correct fresh editor template: no invented active LoRA; preserve existing browser-saved scenes without destructive rewrite. Add clear per-run regional LoRA switch/default-off rather than silently executing or discarding saved references; execution JSON must disclose bypass count and never mutate the source CRF.
+- [ ] Reconcile real Forge cross-job serialization and normal checkpoint/encoder loading with P07 Generate; safeguard model restoration, cancellation, errors and real Q4 loader; avoid replacing unrelated native Forge state or model loaders.
+- [ ] Repair host gates for genuine empty Forge UNet options (SDXL and Anima) and retained finite sampling-sigma metadata; reject active/unknown attention/ControlNet/LoRA hooks without bypass.
+- [ ] If opt-in regional denoiser LoRA activation is enabled, use Forge local registry, pristine model object and whole-Forge exclusion; refuse unavailable/unsafe states before sampling. Preserve text-encoder LoRA restriction and existing Q4 loader; never claim hardware-tested isolation.
+- [ ] Proactively check Anima Q4 text-embedding and native VAE/sampler shapes, error recovery and release UI with tests; add first-party fake Forge lifecycle tests and negative LoRA cases.
+- [ ] Run offline Python + tensor + Chromium/Gradio CI at exact published candidate. Package a new deterministic installation ZIP only after evidence; keep PR draft and P07 not accepted pending genuine real image/VRAM confirmation and full advanced control/LoRA verification.
+
