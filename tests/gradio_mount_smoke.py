@@ -38,7 +38,9 @@ def isolated_generate(*inputs):
                   "detail": "Gradio Python Generate callback was invoked",
                   "input_count": len(inputs), "partial_image": False}
 module.gradio_generate = isolated_generate
-module.probe_ui = lambda: {"status": "SMOKE_INSPECT_BACKEND_CALLED"}
+def probe_ui():
+    return {"status": "SMOKE_INSPECT_BACKEND_CALLED"}
+module.probe_ui = probe_ui
 
 editor_tabs=[entry for maker in callbacks.handlers for entry in maker()]
 with gr.Blocks(title="P02 Gradio 4 mount smoke") as demo:
