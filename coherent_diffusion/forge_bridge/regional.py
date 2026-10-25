@@ -105,7 +105,7 @@ class NativeForgeLoRAs:
 class _RegionalRunner:
     def __init__(self, host, quality, doc, *, model, cfg, seed,
                  device, asset_bytes, loras, cancelled, max_forwards_per_window,
-                 guidance=(), control_factory=None):
+                 guidance=(), control_factory=None, text_mode="prediction"):
         import torch
         self.host = host
         self.quality = quality
@@ -121,7 +121,18 @@ class _RegionalRunner:
         self.active_key = None
         self.regional = compile_regional(
             doc, quality.target, asset_bytes=asset_bytes,
-            max_forwards_per_window=max_forwards_per_window)
+            max_forwards_per_window=max_forwards_per_window,
+            include_scene_in_base=quality.mode == "direct")
+        if text_mode not in ("prediction", "native_sdxl_masks"):
+            raise UnsupportedRegional("Unknown regional text execution mode")
+        if text_mode == "native_sdxl_masks" and (model != "sdxl" or guidance):
+            raise UnsupportedRegional("Native condition-mask batching is SDXL-only without structural controls")
+        if text_mode == "native_sdxl_masks":
+            names = [w.state for w in self.regional.states]
+            if any(x.adapters for x in names) or len({x.negative for x in names}) != 1:
+                raise UnsupportedRegional(
+                    "Native SDXL mask batching needs identical negative and no scoped LoRAs; use prediction mode")
+        self.text_mode = text_mode
         self.guidance = GuidancePlan(doc, quality.target, model, tuple(guidance),
                                      asset_bytes=asset_bytes)
         if self.guidance.requests and not callable(control_factory):
@@ -198,9 +209,61 @@ class _RegionalRunner:
                 self.active.positive = original_positive
                 self.active.negative = original_negative
 
+    def predict_native_masked(self, crop, sigma, tile):
+        """Forge's native masked conditional batch, 2D SDXL only.
+
+        Native calc_cond_uncond_batch may still execute multiple denoiser calls
+        under tight VRAM; this is NOT a guaranteed single model forward nor
+        spatial isolation of individual internal attention activations.
+        """
+        import torch
+        from backend.sampling.sampling_function import sampling_function_inner
+        entries = self.regional.window(tile)
+        if not entries:
+            raise UnsupportedRegional("Native mask batch has no spatial coverage")
+        conditions = []
+        total = len(entries)
+        for state, mask in entries:
+            key = ("direct" if self.quality.mode == "direct" else "refine", state)
+            if key not in self.cached:
+                self.cached[key] = ForgeSDXL.from_prompts(
+                    self.host, self.quality.target, prompt=state.prompt,
+                    negative_prompt=state.negative, cfg=self.cfg, seed=self.seed,
+                    device=self.device)
+            adapter = self.cached[key]
+            if (not isinstance(adapter.positive, (list, tuple)) or len(adapter.positive) != 1
+                    or not isinstance(adapter.negative, (list, tuple))
+                    or len(adapter.negative) != 1):
+                raise UnsupportedRegional("Native SDXL multi-cond path needs one compiled entry per prompt")
+            entry = adapter.positive[0]
+            if (not isinstance(entry, dict) or any(x in entry for x in
+                    ("mask", "strength", "control", "patches"))):
+                raise UnsupportedRegional("Conflicting Forge condition patch/mask hooks")
+            # Forge sums entry.strength for its CFG edit strength. Equal
+            # strength 1/N keeps CFG unchanged; pixel-normalized masks retain
+            # the desired *relative* P06 shares after division by out_count.
+            conditions.append(dict(entry, mask=mask.to(
+                device=crop.device, dtype=crop.dtype).unsqueeze(0),
+                strength=1.0/total))
+        name = ("native_sdxl_masks", self.quality.mode)
+        if self.active_key != name:
+            self.close()
+            adapter = self.cached[("direct" if self.quality.mode == "direct" else "refine",
+                                   entries[0][0])]
+            adapter.prepare()
+            self.active = adapter
+            self.active_key = name
+        noise = torch.full((crop.shape[0],), float(sigma), device=crop.device,
+                           dtype=crop.dtype)
+        return sampling_function_inner(
+            self.host.forge_objects.unet.model, crop, noise,
+            self.active.negative, conditions, self.cfg, {}, self.seed)
+
     def predict(self, crop, sigma, tile, stage):
         if stage == "anchor":
             return self.predict_state(self.anchor, crop, sigma, tile, stage)
+        if self.text_mode == "native_sdxl_masks":
+            return self.predict_native_masked(crop, sigma, tile)
         return blended_prediction(
             self.regional, tile, crop, sigma, stage,
             self.predict_state, cancelled=self.cancelled)
@@ -211,7 +274,8 @@ def run_forge_regional_sdxl(host, quality: QualityPlan, doc: dict, *, cfg: float
                             inference_dtype=None, cancelled=None, progress=None,
                             max_cpu_bytes=4 * 1024**3,
                             max_window_bytes=512 * 1024**2,
-                            max_forwards_per_window=16, guidance=(), control_factory=None):
+                            max_forwards_per_window=16, guidance=(), control_factory=None,
+                            text_mode="prediction"):
     """Return P04 QualityResult; decoder remains ForgeSDXL.decode_tiled."""
     if not isinstance(quality, QualityPlan):
         raise ValueError("SDXL QualityPlan required")
@@ -222,7 +286,8 @@ def run_forge_regional_sdxl(host, quality: QualityPlan, doc: dict, *, cfg: float
         host, quality, doc, model="sdxl", cfg=cfg, seed=seed, device=device,
         asset_bytes=asset_bytes, loras=loras or NativeForgeLoRAs(),
         cancelled=cancelled, max_forwards_per_window=max_forwards_per_window,
-        guidance=guidance, control_factory=control_factory)
+        guidance=guidance, control_factory=control_factory,
+        text_mode=text_mode)
     return execute_quality(
         quality, seed, manager.predict, device=device,
         inference_dtype=inference_dtype, cancelled=cancelled, progress=progress,
