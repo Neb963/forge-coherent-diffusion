@@ -46,7 +46,7 @@ const assert=require('node:assert/strict');
      console.error('P07 bridge diagnostics',JSON.stringify({state,toasts,errors}));
      throw error;
    }
-   assert.equal(await page.locator('#cd_submit button').count(),1,
+   assert.equal(await page.locator('button#cd_submit, #cd_submit button').count(),1,
      'one native Gradio Generate control is registered');
    assert.deepEqual(errors,[],'no parent page errors');
    console.log('P07 Gradio mount/editor transfer PASS (not model inference)');
