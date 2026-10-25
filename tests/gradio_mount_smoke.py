@@ -55,10 +55,10 @@ with gr.Blocks(title="P02 Gradio 4 mount smoke") as demo:
             tab.render()
 # Gradio 4.x must copy the nested tab's callable functions into the root
 # event map. Missing fn produces the exact user traceback inside call_function.
-backend_functions = {"_generate_for_ui", "cancel_generation", "probe_ui"}
+backend_functions = {"_generate_for_ui", "cancel_generation", "probe_ui", "recent_text"}
 registered = [(key, getattr(f, "fn", None)) for key, f in demo.fns.items()
               if getattr(getattr(f, "fn", None), "__name__", None) in backend_functions]
-assert len(registered) == 3, (
+assert len(registered) == 4, (
     "Forge-like nested Blocks rendered without all three Python handlers: "
     + repr([(i, getattr(fn, "__name__", None)) for i, fn in registered]))
 config = demo.get_config_file()
