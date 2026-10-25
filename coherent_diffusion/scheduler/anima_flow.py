@@ -253,7 +253,9 @@ def execute_anima(plan: AnimaQualityPlan, seed: int, predict, *, device="cpu",
             lifted = F.interpolate(a.squeeze(2), size=(plan.target.height, plan.target.width),
                                    mode="bilinear", align_corners=False).unsqueeze(2)
             noise = anima_noise(plan.target, seed ^ 0x1E3779B97F4A7C15, plan.refine_sigmas[0])
-            start = lifted + noise
+            # Native KModel constant-flow noise scaling: (1-sigma)*x0 + sigma*epsilon.
+            # Unlike SDXL Euler, flow must NOT simply add noise to the anchor.
+            start = (1.0 - plan.refine_sigmas[0]) * lifted + noise
             del anchor_start, a, lifted, noise
             final_stage = "refine"
         else:
