@@ -62,7 +62,7 @@ class RunnerContracts(unittest.TestCase):
     def plan(self, *, family="sdxl", mode="direct", scene_json="", archive_b64="", width=512,
              height=512, tile=512, overlap=128, halo=64, steps=2, cfg=1.0):
         host=types.SimpleNamespace()
-        with patch("coherent_diffusion.forge_bridge.sdxl.ForgeSDXL._check_host") as sdxl, \\
+        with patch("coherent_diffusion.forge_bridge.sdxl.ForgeSDXL._check_host") as sdxl, \
              patch("coherent_diffusion.forge_bridge.anima.ForgeAnima.check_host", return_value=2) as anima:
             plan=ep.preflight(host=host, family=family, mode=mode, width=width, height=height,
                               tile=tile, overlap=overlap, halo=halo, steps=steps, cfg=cfg,
@@ -90,7 +90,7 @@ class RunnerContracts(unittest.TestCase):
             with self.subTest(kw=kw),self.assertRaises(ValueError):
                 self.plan(**kw)
         with self.assertRaises(ValueError):
-            self.plan(family="anima", mode="progressive", width=768)
+            self.plan(family="anima", mode="progressive", width=704)
 
     def test_crf_aspect_and_lora_safety(self):
         from coherent_diffusion.crf import canonical_json
@@ -114,7 +114,7 @@ class RunnerContracts(unittest.TestCase):
         plan=self.plan()
         result=types.SimpleNamespace(latent=torch.zeros(1,4,64,64),model_forwards=2)
         pixels=torch.ones((1,512,512,3),dtype=torch.float32)*0.5
-        with patch("coherent_diffusion.forge_bridge.quality.run_forge_sdxl_quality",return_value=result) as run, \\
+        with patch("coherent_diffusion.forge_bridge.quality.run_forge_sdxl_quality",return_value=result) as run, \
              patch.object(ep,"_decode",return_value=pixels) as decode:
             image, meta=ep.execute(plan,host=types.SimpleNamespace())
         self.assertEqual(image.size,(512,512))
