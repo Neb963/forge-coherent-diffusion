@@ -63,7 +63,9 @@ class RunnerContracts(unittest.TestCase):
              height=512, tile=512, overlap=128, halo=64, steps=2, cfg=1.0):
         host=types.SimpleNamespace()
         with patch("coherent_diffusion.forge_bridge.sdxl.ForgeSDXL._check_host") as sdxl, \
-             patch("coherent_diffusion.forge_bridge.anima.ForgeAnima.check_host", return_value=2) as anima:
+             patch("coherent_diffusion.forge_bridge.anima.ForgeAnima.check_host", return_value=2) as anima, \
+             patch.object(ep, "_model_sigmas",
+                          side_effect=lambda host, family, n: tuple(1-i/n for i in range(n+1))):
             plan=ep.preflight(host=host, family=family, mode=mode, width=width, height=height,
                               tile=tile, overlap=overlap, halo=halo, steps=steps, cfg=cfg,
                               seed=42.0, cpu_mib=512, window_mib=64, scene_json=scene_json,
@@ -73,6 +75,40 @@ class RunnerContracts(unittest.TestCase):
             else:
                 anima.assert_called_once_with(host)
         return plan
+
+    def test_native_predictor_sigma_sources_and_refusals(self):
+        # The SDXL training log-sigma table is not capped at 1 by the UI.
+        class Prediction:
+            prediction_type="epsilon"
+            sigmas=torch.linspace(.02,12.0,1000)
+            def sigma(self, time):
+                return .02 + time.float() / 999 * 11.98
+        class PredictionFlux:
+            prediction_type="const"
+            def sigma(self, time):
+                return (time.float()*.9).square()
+        class PredictionDiscreteFlow:
+            prediction_type="const"
+            multiplier=1000
+            def sigma(self, time):
+                return time.float()/1000
+        def host(p):
+            return types.SimpleNamespace(forge_objects=types.SimpleNamespace(
+                unet=types.SimpleNamespace(model=types.SimpleNamespace(predictor=p))))
+        sd=ep._model_sigmas(host(Prediction()),"sdxl",4)
+        self.assertGreater(sd[0],10)
+        self.assertEqual(sd[-1],0)
+        an=ep._model_sigmas(host(PredictionFlux()),"anima",4)
+        self.assertEqual(an[0],.81)
+        self.assertEqual(an[-1],0)
+        self.assertTrue(all(a>b for a,b in zip(an,an[1:])))
+        discrete=ep._model_sigmas(host(PredictionDiscreteFlow()),"anima",4)
+        self.assertAlmostEqual(discrete[0],1)
+        self.assertEqual(discrete[-1],0)
+        with self.assertRaises(ep.UnsupportedGeneration):
+            ep._model_sigmas(host(PredictionFlux()),"sdxl",4)
+        with self.assertRaises(ep.UnsupportedGeneration):
+            ep._model_sigmas(host(types.SimpleNamespace()),"anima",4)
 
     def test_both_families_and_trajectories(self):
         for family in ("sdxl", "anima"):
