@@ -256,17 +256,22 @@ def run_forge_anima_quality(host, plan: AnimaQualityPlan, *, prompt: str,
 
     def predict(crop, sigma, tile, stage):
         nonlocal active, stage_name
-        if active is None:
-            # Lazy: preflight memory/sigmas before any encoder side effects.
-            active = ForgeAnima.from_prompts(
-                host, plan.target, prompt=prompt, negative_prompt=negative_prompt,
-                cfg=cfg, seed=seed, device=device)
-        if stage_name != stage:
-            close()
-            active.plan = plan.anchor if stage == "anchor" else plan.target
-            active.prepare()
-            stage_name = stage
-        return active.predict(crop, sigma, tile)
+        from coherent_diffusion.forge_bridge.diagnostics import record, timed_prediction
+        with timed_prediction(stage=stage, tile=tile.index, sigma=sigma):
+            if active is None:
+                record("conditioning_begin", stage=stage, tile=tile.index)
+                active = ForgeAnima.from_prompts(
+                    host, plan.target, prompt=prompt, negative_prompt=negative_prompt,
+                    cfg=cfg, seed=seed, device=device)
+                record("conditioning_done", stage=stage, tile=tile.index)
+            if stage_name != stage:
+                close()
+                active.plan = plan.anchor if stage == "anchor" else plan.target
+                record("model_prepare_begin", stage=stage, tile=tile.index)
+                active.prepare()
+                record("model_prepare_done", stage=stage, tile=tile.index)
+                stage_name = stage
+            return active.predict(crop, sigma, tile)
 
     import torch
     if inference_dtype is None:
