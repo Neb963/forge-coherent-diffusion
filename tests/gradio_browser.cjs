@@ -2,6 +2,7 @@
 const {chromium}=require('playwright');
 const {spawn}=require('node:child_process');
 const assert=require('node:assert/strict');
+const fs=require('node:fs');
 
 (async()=>{
  const server=spawn('python',['tests/gradio_mount_smoke.py'],{stdio:['ignore','pipe','pipe']});
@@ -17,7 +18,7 @@ const assert=require('node:assert/strict');
   assert.ok(ready,'Gradio host did not start: '+log.slice(-4000));
   const browser=await chromium.launch({headless:true});
   try{
-   const page=await browser.newPage({viewport:{width:1536,height:1100}});
+   const page=await browser.newPage({viewport:{width:1536,height:1100},acceptDownloads:true});
    const errors=[];
    page.on('pageerror',e=>errors.push(e.message));
    await page.goto(url,{waitUntil:'domcontentloaded'});
@@ -93,6 +94,23 @@ const assert=require('node:assert/strict');
    await page.waitForFunction(()=>
      (document.querySelector('#cd_probe_evidence')?.innerText||'').includes('SMOKE_INSPECT_BACKEND_CALLED'),
      null,{timeout:10000});
+   // Exercise the EXACT distributed JS observer and one-click export.
+   await page.addScriptTag({path:'javascript/coherent_diffusion_diagnostics.js'});
+   await page.waitForSelector('#cd-debug-toggle');
+   await page.evaluate(()=>window.__cdDiagnosticsV1.record('browser_unit_check',{
+     fn_index:12, route:'/queue/join', secret:'never-log',
+     error:'dummy token with spaces'}));
+   await page.locator('#cd-debug-toggle').click();
+   await page.locator('#cd-debug-panel button').filter({hasText:'Download logs'}).waitFor();
+   const downloadPromise=page.waitForEvent('download');
+   await page.locator('#cd-debug-panel button').filter({hasText:'Download logs'}).click();
+   const saved=await downloadPromise;
+   const exported=JSON.parse(fs.readFileSync(await saved.path(),'utf8'));
+   assert.equal(exported.format,'coherent-diffusion-diagnostics-v1');
+   assert.ok(exported.browser_events.some(x=>x.kind==='browser_unit_check'&&x.fn_index===12));
+   assert.ok(!JSON.stringify(exported).includes('never-log'),'request fields are allowlisted');
+   assert.ok(exported.server_log_jsonl.includes('diagnostics_ready'),
+      'live rotating Forge-side journal is visible to browser export');
    assert.ok(!log.includes('function has no backend method'),
       'missing backend function invoked by Gradio 4 queue: '+log.slice(-3000));
    assert.deepEqual(errors,[],'no parent page errors');
