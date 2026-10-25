@@ -165,7 +165,6 @@ class _RegionalRunner:
             raise InterruptedError("Regional Forge generation cancelled")
         key = (stage, state)
         if key != self.active_key:
-            self.close()
             if key not in self.cached:
                 selected = self.quality.anchor if stage == "anchor" else self.quality.target
                 if selected is None:
@@ -173,20 +172,43 @@ class _RegionalRunner:
                 cls = ForgeSDXL if self.model == "sdxl" else ForgeAnima
                 kwargs = dict(prompt=state.prompt, negative_prompt=state.negative,
                               cfg=self.cfg, seed=self.seed, device=self.device)
-                # Compile through existing Forge encoder; no regional TE-LoRAs.
+                # Encode one time per stage/unique prompt. No Q4 encoder reload.
+                from coherent_diffusion.forge_bridge.diagnostics import record
+                record("conditioning_begin", stage=stage, tile=tile.index)
                 self.cached[key] = cls.from_prompts(self.host, selected, **kwargs)
+                record("conditioning_done", stage=stage, tile=tile.index)
             adapter = self.cached[key]
-            if state.adapters:
-                scope = self.loras.scoped(self.host, state.adapters)
-                scope.__enter__()
-                self.active_scope = scope
-            try:
-                adapter.prepare()
-                self.active = adapter
+            # A change in text conditioning is NOT a model-patcher change.
+            # Keep the already prepared Anima UNet resident across prompt-only
+            # region states, including transitions between adjacent windows.
+            # Do not use this path for LoRAs, controls, changed anchor/target
+            # geometry, or SDXL (not yet validated for this optimization).
+            can_reuse = (self.model == "anima"
+                         and self.active is not None and self.active_scope is None
+                         and self.active_key is not None
+                         and self.active_key[0] == stage
+                         and not self.active_key[1].adapters
+                         and not state.adapters and not self.guidance.requests)
+            if can_reuse:
+                self.active.positive = adapter.positive
+                self.active.negative = adapter.negative
                 self.active_key = key
-            except BaseException:
+            else:
                 self.close()
-                raise
+                if state.adapters:
+                    scope = self.loras.scoped(self.host, state.adapters)
+                    scope.__enter__()
+                    self.active_scope = scope
+                try:
+                    from coherent_diffusion.forge_bridge.diagnostics import record
+                    record("model_prepare_begin", stage=stage, tile=tile.index)
+                    adapter.prepare()
+                    record("model_prepare_done", stage=stage, tile=tile.index)
+                    self.active = adapter
+                    self.active_key = key
+                except BaseException:
+                    self.close()
+                    raise
         if stage == "anchor" or not self.guidance.requests:
             return self.active.predict(crop, sigma, tile)
         start_sigma = self.quality.refine_sigmas[0]
