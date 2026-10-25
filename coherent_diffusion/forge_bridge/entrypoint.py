@@ -303,7 +303,7 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
         from PIL import Image
         import torch
         frame = (pixels[0] * 255).round().to(torch.uint8).numpy()
-        image = Image.fromarray(frame, mode="RGB")
+        image = Image.fromarray(frame)
         meta = {
             "format": "coherent-diffusion-replay", "version": 1,
             "verification": "live installation and GPU output require acceptance",
@@ -312,7 +312,7 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
             "tile": plan.tile, "overlap": plan.overlap, "halo": plan.halo,
             "steps": plan.steps, "seed": plan.seed, "cfg": plan.cfg,
             "crf_sha256": plan.document_hash,
-            "model_forwards_estimate": result.model_forwards,
+            "window_step_evaluations_lower_bound": result.model_forwards,
             "trajectory": "loaded_predictor_uniform_timestep_euler" if plan.family == "sdxl"
                            else "loaded_predictor_shifted_constant_flow",
             "sigma_first": plan.quality.refine_sigmas[0],
