@@ -85,7 +85,7 @@ class RunnerContracts(unittest.TestCase):
                     self.assertEqual(q.anchor is not None,mode=="progressive")
 
     def test_explicit_geometry_rejections(self):
-        for kw in ({"width":513},{"height":4096+64},{"tile":320},
+        for kw in ({"width":513},{"height":4096+64},{"tile":352},
                    {"halo":72},{"overlap":512},{"steps":101}):
             with self.subTest(kw=kw),self.assertRaises(ValueError):
                 self.plan(**kw)
