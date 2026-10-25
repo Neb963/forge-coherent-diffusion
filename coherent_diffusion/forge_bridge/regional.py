@@ -135,6 +135,10 @@ class _RegionalRunner:
         self.text_mode = text_mode
         self.guidance = GuidancePlan(doc, quality.target, model, tuple(guidance),
                                      asset_bytes=asset_bytes)
+        if self.guidance.requests and quality.mode == "progressive":
+            raise UnsupportedRegional(
+                "Progressive anchor guidance requires a separately validated anchor map; "
+                "use direct mode or omit structural guidance")
         if self.guidance.requests and not callable(control_factory):
             raise UnsupportedRegional(
                 "Structural guidance requires explicit supported native Forge control factory")
