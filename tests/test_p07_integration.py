@@ -60,7 +60,8 @@ class InputValidation(unittest.TestCase):
 @unittest.skipIf(torch is None, "Pinned CPU torch runs these contracts in tensor job")
 class RunnerContracts(unittest.TestCase):
     def plan(self, *, family="sdxl", mode="direct", scene_json="", archive_b64="", width=512,
-             height=512, tile=512, overlap=128, halo=64, steps=2, cfg=1.0):
+             height=512, tile=512, overlap=128, halo=64, steps=2, cfg=1.0,
+             activate_region_loras=False):
         host=types.SimpleNamespace()
         with patch("coherent_diffusion.forge_bridge.sdxl.ForgeSDXL._check_host") as sdxl, \
              patch("coherent_diffusion.forge_bridge.anima.ForgeAnima.check_host", return_value=2) as anima, \
@@ -69,7 +70,8 @@ class RunnerContracts(unittest.TestCase):
             plan=ep.preflight(host=host, family=family, mode=mode, width=width, height=height,
                               tile=tile, overlap=overlap, halo=halo, steps=steps, cfg=cfg,
                               seed=42.0, cpu_mib=512, window_mib=64, scene_json=scene_json,
-                              archive_b64=archive_b64, prompt="one sun", negative="")
+                              archive_b64=archive_b64, prompt="one sun", negative="",
+                              activate_region_loras=activate_region_loras)
             if family=="sdxl":
                 sdxl.assert_called_once_with(host)
             else:
@@ -137,8 +139,12 @@ class RunnerContracts(unittest.TestCase):
             "loras":[{"id":"l","name":"local","weight":1,"scope":"regional",
                       "requested_isolation":"prediction"}],
         }]
-        with self.assertRaisesRegex(ep.UnsupportedGeneration,"exclusive"):
-            self.plan(scene_json=canonical_json(doc))
+        bypassed=self.plan(scene_json=canonical_json(doc))
+        self.assertEqual(bypassed.bypassed_region_loras,1)
+        self.assertEqual(bypassed.document["regions"][0]["loras"],[])
+        activated=self.plan(scene_json=canonical_json(doc),activate_region_loras=True)
+        self.assertTrue(activated.activate_region_loras)
+        self.assertEqual(len(activated.document["regions"][0]["loras"]),1)
         doc["regions"][0]["loras"]=[]
         p=self.plan(scene_json=canonical_json(doc))
         self.assertTrue(p.has_regions)
