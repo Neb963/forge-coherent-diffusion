@@ -82,7 +82,7 @@ class ForgeQualityP04Tests(unittest.TestCase):
         with patch("coherent_diffusion.forge_bridge.quality.ForgeSDXL",self.make_fake(events)):
             with self.assertRaises(MemoryError):
                 run_forge_sdxl_quality(object(),self.q,prompt="sky",cfg=3,seed=19,
-                                        device="cpu",max_cpu_bytes=1024)
+                                        device="cpu",max_cpu_bytes=17000)
         self.assertEqual(events,[])
 
 
