@@ -117,7 +117,7 @@ const colors=['#8db3f8','#f2bb74','#6fd4be','#e5a1ca','#b79bfa','#9ac776','#e6a9
 const initial=()=>({canvas:{width:4096,height:3072,coordinate_system:'normalized_top_left',aspect_policy:'preserve_relative'},global:{scene_prompt:'A wide coastal landscape with one sun above the sea, open ocean and a sandy beach.',style_prompt:'High-end natural landscape photography, authentic color, lifelike textures, subtle optical detail, coherent daylight.',negative_prompt:'CGI, illustration, duplicated objects, unnatural repetition',base_weight:.25},blend:{policy:'weighted'},entities:[{id:'sun-1',description:'single sun',count:1,region_ids:['sun']}],regions:[
 {id:'sky',name:'Atmospheric sky',geometry:{type:'bbox',bbox:[0,0,1,.46]},prompt:'Delicate high clouds, clear atmospheric depth',negative_prompt:'',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.24,blend:{weight:1,feather_px:48,z_index:10},loras:[],color:colors[0]},
 {id:'ocean',name:'Open ocean',geometry:{type:'polygon',points:[[0,.43],[1,.43],[1,.81],[0,.77]]},prompt:'Natural ocean waves, continuous distant horizon',negative_prompt:'',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.26,blend:{weight:1,feather_px:40,z_index:11},loras:[],color:colors[2]},
-{id:'beach',name:'Sand & shoreline',geometry:{type:'bbox',bbox:[0,.77,1,.23]},prompt:'Detailed natural sand, wet reflective shoreline',negative_prompt:'',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.27,blend:{weight:1,feather_px:32,z_index:12},loras:[{id:'beach-detail',name:'example_local_texture_lora',weight:.6,scope:'regional',requested_isolation:'approximate'}],color:colors[3]},
+{id:'beach',name:'Sand & shoreline',geometry:{type:'bbox',bbox:[0,.77,1,.23]},prompt:'Detailed natural sand, wet reflective shoreline',negative_prompt:'',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.27,blend:{weight:1,feather_px:32,z_index:12},loras:[],color:colors[3]},
 {id:'clouds',name:'Soft clouds',geometry:{type:'polygon',points:[[.09,.08],[.44,.09],[.52,.21],[.41,.28],[.07,.22]]},prompt:'Thin coastal cloud formations',negative_prompt:'',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.32,blend:{weight:.65,feather_px:38,z_index:13},loras:[],color:colors[4]},
 {id:'sun',name:'Single sun',geometry:{type:'bbox',bbox:[.71,.08,.13,.16]},prompt:'One small bright sun with subtle localized atmospheric glow',negative_prompt:'multiple suns',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.38,blend:{weight:2,feather_px:28,z_index:20},loras:[],color:colors[1]}
 ]});
@@ -646,6 +646,14 @@ function base64Bytes(bytes){
 }
 async function openGenerate(){
  save();
+ // Do not edit existing saved CRFs. Region LoRA activation is an explicit
+ // separate Gradio opt-in and disabled by default for safety.
+ const refs=scene.regions.filter(r=>r.enabled!==false && Number(r.blend?.weight)>0)
+   .reduce((n,r)=>n+(r.loras||[]).length,0);
+ if(refs){
+  toast(refs+' regional LoRA reference(s) in this scene',false,
+   'By default they are bypassed only during generation. Enable activation in the Forge Generate panel if intended.');
+ }
  if(window.parent===window){
   openModal('Forge Neo host required',
    '<p class="modal-sub">Open this editor in the Coherent Diffusion tab in Forge Neo to run the installed model. Standalone previews cannot generate images.</p>',
