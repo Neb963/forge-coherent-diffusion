@@ -165,7 +165,8 @@ def _region_state(region, doc):
 
 def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
                      max_latent_pixels=1_048_576, max_forwards_per_window=16,
-                     include_scene_in_base=False):
+                     include_scene_in_base=False,
+                     max_mask_workspace_bytes=1024**3):
     """Build complete normalized per-state coefficients, no I/O/model mutations.
 
     Supports exact normalized aspect only; projective/crop transformations need
@@ -193,6 +194,14 @@ def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
         base_prompt = ", ".join(dict.fromkeys(x.strip() for x in
             (doc["global"]["scene_prompt"], base_prompt) if x.strip()))
     initial = PredictionState(base_prompt, neg)
+    # Conservative CPU mask/intermediate estimate before any per-region grid
+    # construction. Geometry distance tensors need multiple full-size grids.
+    active_regions = sum(bool(r.get("enabled", True) and r["blend"]["weight"] > 0)
+                         for r in doc["regions"])
+    if (type(max_mask_workspace_bytes) is not int or max_mask_workspace_bytes <= 0
+            or (active_regions * 16 + 64) * plan.width * plan.height >
+            max_mask_workspace_bytes):
+        raise MemoryError("Regional mask compilation exceeds configured CPU workspace budget")
     masks = []
     warnings = []
     for index, region in enumerate(doc["regions"]):
