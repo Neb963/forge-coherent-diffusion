@@ -491,7 +491,8 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
                         cancelled=lambda: bool(getattr(state, "interrupted", False)))
                     debug_record("generation_completed", success=True,
                                  elapsed_ms=(__import__("time").monotonic()-started)*1000,
-                                 width=plan.width, height=plan.height)
+                                 width=getattr(image, "width", None),
+                                 height=getattr(image, "height", None))
                     return image, details
                 finally:
                     host.forge_objects = original_holder
