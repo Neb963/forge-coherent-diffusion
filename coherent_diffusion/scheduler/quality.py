@@ -7,7 +7,6 @@ methods remain disabled pending measured image comparisons in P07.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Callable
 
@@ -132,6 +131,16 @@ def execute_quality(
         if quality.anchor is not None:
             _preflight(quality.anchor, max_cpu_bytes=max_cpu_bytes,
                        max_window_bytes=max_window_bytes)
+            # P03 accounts for its own four full-canvas work buffers. P04
+            # additionally holds the lifted anchor, seeded refinement noise,
+            # new refinement input, and at least the retained anchor field.
+            # Reject memory limits that do not accommodate the stage handoff.
+            state = 4 * 4 * quality.target.width * quality.target.height
+            anchor_state = 4 * 4 * quality.anchor.width * quality.anchor.height
+            handoff_peak = (state * 7 + quality.target.width *
+                            quality.target.height * 4 + anchor_state)
+            if handoff_peak > max_cpu_bytes:
+                raise MemoryError("Progressive handoff exceeds configured CPU residency budget")
         if cancelled is not None and cancelled():
             raise InterruptedError("Coherent quality run interrupted")
         stages = []
