@@ -133,10 +133,20 @@ def _region_mask(region, doc, plan, *, asset_bytes):
     return (signed / feather + 0.5).clamp(0, 1)
 
 
+def _entity_prompt(region_id, doc):
+    return ", ".join(dict.fromkeys(
+        e["description"].strip() for e in doc.get("entities", [])
+        if region_id in e["region_ids"] and e["description"].strip()))
+
+
 def _region_state(region, doc):
     style = doc["global"]["style_prompt"] if region.get("inherit_style", True) else ""
     value = region.get("prompt")
     # Missing/null inherits shared style ONLY; empty explicitly yields no local text.
+    # Null/missing local text may refer to declared unique entities; a
+    # deliberately empty string suppresses entity fallback.
+    if value is None:
+        value = _entity_prompt(region["id"], doc)
     parts = [x.strip() for x in (style, value) if isinstance(x, str) and x.strip()]
     prompt = ", ".join(dict.fromkeys(parts))
     neg = region.get("negative_prompt")
@@ -197,7 +207,9 @@ def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
                               (entry[1]["blend"]["z_index"], entry[0]), reverse=True):
             weights.append((r, transmission * m * r["blend"]["weight"]))
             transmission *= (1-m)
-        base_weight = base * transmission
+        # Match P02 authoring preview: base contribution is explicit and
+        # is never occluded by higher-priority regional masks.
+        base_weight = torch.full((plan.height, plan.width), base)
     else:
         raise UnsupportedRegional("Unsupported regional blend policy")
     denom = base_weight.clone()
