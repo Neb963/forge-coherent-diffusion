@@ -24,6 +24,9 @@ def run_forge_sdxl_quality(host, quality: QualityPlan, *, prompt: str,
     """
     if not isinstance(quality, QualityPlan):
         raise ValueError("Expected P04 QualityPlan")
+    if device is None:
+        from backend import memory_management
+        device = memory_management.get_torch_device()
     active = None
     active_name = None
 
@@ -53,7 +56,7 @@ def run_forge_sdxl_quality(host, quality: QualityPlan, *, prompt: str,
         return active.predict(crop, sigma, tile)
 
     return execute_quality(
-        quality, seed, predict, device=device or "cpu",
+        quality, seed, predict, device=device,
         inference_dtype=inference_dtype, cancelled=cancelled,
         progress=progress, cleanup=close, max_cpu_bytes=max_cpu_bytes,
         max_window_bytes=max_window_bytes)
