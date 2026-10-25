@@ -73,7 +73,7 @@ class TilePlan:
         values = (width_px, height_px, tile_px, overlap_px, halo_px, scale)
         if any(type(v) is not int for v in values):
             raise ValueError("Tile geometry requires integer pixel dimensions")
-        if min(width_px, height_px, tile_px, scale, max_windows) <= 0:
+        if min(width_px, height_px, tile_px, scale) <= 0:
             raise ValueError("Positive image dimensions, tile and scale required")
         if max_windows is not None and (type(max_windows) is not int or max_windows < 1):
             raise ValueError("Explicit positive tile-count allowance required")
