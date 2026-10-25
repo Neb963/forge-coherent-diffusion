@@ -45,6 +45,8 @@ class JobPlan:
     quality: Any
     document: dict
     assets: dict
+    bypassed_region_loras: int = 0
+    activate_region_loras: bool = False
 
 
 def cancel_generation():
@@ -171,7 +173,7 @@ def _model_sigmas(host, family: str, steps: int):
 
 def preflight(*, host, family, mode, width, height, tile, overlap, halo,
               steps, cfg, seed, cpu_mib, window_mib, scene_json="",
-              archive_b64="", prompt="", negative=""):
+              archive_b64="", prompt="", negative="", activate_region_loras=False):
     """Strict, side-effect-free request preflight before Forge text encoding."""
     from coherent_diffusion.scheduler.sdxl_sync import TilePlan
     from coherent_diffusion.scheduler.quality import QualityPlan
@@ -207,10 +209,23 @@ def preflight(*, host, family, mode, width, height, tile, overlap, halo,
         ForgeSDXL._check_host(host)
     else:
         patch = ForgeAnima.check_host(host)
-    if any(r.get("loras") and r.get("enabled", True) for r in doc["regions"]):
-        raise UnsupportedGeneration(
-            "Regional LoRAs require verified whole-Forge exclusive generation ownership; "
-            "P07 real-host acceptance pending. Remove adapters to run other regions.")
+    if type(activate_region_loras) is not bool:
+        raise ValueError("Regional LoRA activation flag must be boolean")
+    # Hash the *authored* CRF before compiling a transient execution copy.
+    # The editor's starter historically referenced a non-existent example LoRA.
+    # Such authoring intent must never silently trigger native model mutations.
+    authored_hash = hashlib.sha256(canonical_json(doc).encode("utf-8")).hexdigest()
+    active_refs = sum(len(r.get("loras", [])) for r in doc["regions"]
+                      if r.get("enabled", True) and r["blend"]["weight"] > 0)
+    bypassed = active_refs if not activate_region_loras else 0
+    if bypassed:
+        # parse_validate already returned a newly decoded doc. Do not change
+        # source archives/drafts; mode and count are explicit in UI/evidence.
+        doc = {**doc, "regions": [
+            {**r, "loras": []} if r.get("loras") else r
+            for r in doc["regions"]
+        ]}
+
     plan = TilePlan.build(w, h, t, ov, ha)
     # Use actual loaded predictor shape and sigma scaling. This is an
     # explicitly selected Euler/flow trajectory, not Forge's default sampler.
@@ -228,8 +243,9 @@ def preflight(*, host, family, mode, width, height, tile, overlap, halo,
         raise ValueError("Orphan mask data in composition")
     return JobPlan(family, mode, w, h, t, ov, ha, s, n, c,
                    cm * 1024**2, wm * 1024**2,
-                   hashlib.sha256(canonical_json(doc).encode("utf-8")).hexdigest(),
-                   bool(doc["regions"]), quality, doc, assets)
+                   authored_hash,
+                   bool(doc["regions"]), quality, doc, assets, bypassed,
+                   activate_region_loras)
 
 
 def _decode(host, plan, latent):
@@ -312,6 +328,8 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
             "tile": plan.tile, "overlap": plan.overlap, "halo": plan.halo,
             "steps": plan.steps, "seed": plan.seed, "cfg": plan.cfg,
             "crf_sha256": plan.document_hash,
+            "active_regional_loras": plan.activate_region_loras,
+            "regional_lora_references_bypassed": plan.bypassed_region_loras,
             "window_step_evaluations_lower_bound": result.model_forwards,
             "trajectory": "loaded_predictor_uniform_timestep_euler" if plan.family == "sdxl"
                            else "loaded_predictor_shifted_constant_flow",
@@ -330,26 +348,65 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
 
 def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
                     width, height, tile, overlap, halo, steps, cfg, seed,
-                    cpu_mib, window_mib):
-    """User-facing callback; return structured error, never a partial image."""
+                    cpu_mib, window_mib, activate_region_loras=False):
+    """Native Forge UI job: queued with Forge txt2img and its checkpoint loader.
+
+    We do not replace the installed Anima/Q4 encoder or patcher lifecycle.
+    The per-run model-object pointer is restored on every exit path. Actual
+    GPU/encoder correctness still requires installed-host P07 acceptance.
+    """
     try:
         from modules import sd_models, shared
-        host = sd_models.model_data.sd_model
-        if host is None:
-            raise UnsupportedGeneration("Load one SDXL or Anima checkpoint in Forge first")
-        # This is a cooperative guard, not proof of whole-Forge exclusive ownership.
-        state = getattr(shared, "state", None)
-        if getattr(state, "job", None):
-            raise UnsupportedGeneration("Forge is already processing another job")
-        plan = preflight(
-            host=host, scene_json=scene_json or "", archive_b64=archive_b64 or "",
-            prompt=prompt or "", negative=negative or "", family=family, mode=mode,
-            width=width, height=height, tile=tile, overlap=overlap, halo=halo,
-            steps=steps, cfg=cfg, seed=seed, cpu_mib=cpu_mib,
-            window_mib=window_mib)
-        image, details = execute(plan, host=host,
-                                 cancelled=lambda: bool(getattr(state, "interrupted", False)))
-        return image, details
+        if not hasattr(sd_models, "model_data"):
+            raise UnsupportedGeneration("Forge model loader unavailable")
+        # Offline no-host probes and actual missing-checkpoint are distinct
+        # from the Forge FakeInitialModel placeholder (loadable by UI).
+        if getattr(sd_models.model_data, "sd_model", None) is None:
+            raise UnsupportedGeneration("Select an SDXL or Anima checkpoint in Forge first")
+        from modules import call_queue
+        from modules_forge import main_entry
+
+        # All native txt2img and img2img jobs use this same FIFO lock. Gradio's
+        # own queue does not exclude concurrent tabs or extensions by itself.
+        with call_queue.queue_lock:
+            state = getattr(shared, "state", None)
+            if state is None:
+                raise UnsupportedGeneration("Forge job state unavailable")
+            state.begin(job="coherent-diffusion")
+            try:
+                # Resolve *current* native checkpoint and additional modules;
+                # trigger the same native reload as ordinary Forge generation.
+                main_entry.refresh_model_loading_parameters()
+                host, _ = sd_models.forge_model_reload()
+                if host is None or type(host).__name__ == "FakeInitialModel":
+                    raise UnsupportedGeneration(
+                        "Forge has no loaded checkpoint; select a model and inspect native load logs")
+                original_holder = getattr(host, "forge_objects", None)
+                pristine_holder = getattr(host, "forge_objects_original", None)
+                if original_holder is None or pristine_holder is None or not callable(
+                        getattr(pristine_holder, "shallow_copy", None)):
+                    raise UnsupportedGeneration("Loaded Forge original model patchers unavailable")
+                # A native generation may leave globally adapted patcher
+                # pointers active. Use a scoped shallow copy of the original
+                # patcher set for our own region states, restore it afterwards.
+                host.forge_objects = pristine_holder.shallow_copy()
+                try:
+                    plan = preflight(
+                        host=host, scene_json=scene_json or "",
+                        archive_b64=archive_b64 or "", prompt=prompt or "",
+                        negative=negative or "", family=family, mode=mode,
+                        width=width, height=height, tile=tile, overlap=overlap,
+                        halo=halo, steps=steps, cfg=cfg, seed=seed,
+                        cpu_mib=cpu_mib, window_mib=window_mib,
+                        activate_region_loras=activate_region_loras)
+                    image, details = execute(
+                        plan, host=host,
+                        cancelled=lambda: bool(getattr(state, "interrupted", False)))
+                    return image, details
+                finally:
+                    host.forge_objects = original_holder
+            finally:
+                state.end()
     except Exception as exc:
         return None, {"status": "error", "type": type(exc).__name__,
                       "detail": str(exc)[:800], "partial_image": False}
