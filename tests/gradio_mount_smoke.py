@@ -44,7 +44,11 @@ module.probe_ui = probe_ui
 
 editor_tabs=[entry for maker in callbacks.handlers for entry in maker()]
 with gr.Blocks(title="P02 Gradio 4 mount smoke") as demo:
+    # Forge has frontend-only listeners with fn=None mixed among Python
+    # handlers. They are legal unless the browser mistakenly queues them.
     with gr.Tab("txt2img"):
+        host_only = gr.Button("Forge frontend-only mock", elem_id="cd_host_js_only")
+        host_only.click(fn=None, js="() => console.debug('host frontend action')")
         module.Script().ui(False)
     for tab,title,elem_id in editor_tabs:
         with gr.Tab(title,elem_id="tab_"+elem_id):
@@ -59,6 +63,8 @@ assert len(registered) == 3, (
     + repr([(i, getattr(fn, "__name__", None)) for i, fn in registered]))
 config = demo.get_config_file()
 deps = config.get("dependencies", [])
+assert any(d.get("backend_fn") is False for d in deps), (
+    "Host-like frontend-only Gradio callback not represented")
 for index, handler in registered:
     matches = [d for d in deps if d.get("id") == index]
     assert matches, f"Registered handler {index} missing from root config"
