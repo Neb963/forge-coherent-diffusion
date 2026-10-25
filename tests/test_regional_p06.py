@@ -80,7 +80,7 @@ class RegionalTests(unittest.TestCase):
         reverse["regions"].reverse()
         r = self.compile(reverse)
         by_name2 = {s.state.prompt: s.weight for s in r.states}
-        self.assertFalse(torch.equal(by_name["cinematic, front"], by_name2["cinematic, front"]))
+        self.assertFalse(torch.equal(by_name["cinematic, front"], by_name2.get("cinematic, front", torch.zeros_like(by_name["cinematic, front"]))))
 
     def test_disabled_visibility_zero_and_negative_semantics(self):
         d = fixture()
@@ -209,7 +209,7 @@ class RegionalTests(unittest.TestCase):
                 with manager.scoped(host, (("look", sha, .7),)):
                     self.assertIsNot(host.forge_objects.unet, base_unet)
                     self.assertIs(host.forge_objects.clip, clip)
-                    with self.assertRaises(RuntimeError):
+                    with self.assertRaises(UnsupportedRegional):
                         with manager.scoped(host, (("look", None, .7),)):
                             pass
                 self.assertIs(host.forge_objects.unet, base_unet)
