@@ -664,19 +664,34 @@ async function openGenerate(){
   }
   const parentOrigin=window.parent.location.origin;
   if(!parentOrigin||parentOrigin==='null')throw Error('Trusted Forge origin unavailable');
-  window.parent.postMessage({
-   kind:'coherent-diffusion-generate-v1',scene:json,archive,
-   settings:{model:settings.model,strategy:settings.strategy,
-      width:doc.canvas.width,height:doc.canvas.height,tile:settings.tile}
-  },parentOrigin);
-  toast('CRF sent to Forge generation form',false,'Run status and errors appear under the editor');
+  // This bundled srcdoc inherits the Forge origin. A nested Gradio Blocks
+  // instance does not reliably run its js= startup initializer when rendered
+  // under Forge's top-level Blocks, so update only our own fields directly.
+  const host=window.parent.document;
+  function setForgeField(id,value){
+   const root=host.getElementById(id),field=root?.querySelector('textarea,input,select');
+   if(!field)throw Error('Forge generation field unavailable: '+id);
+   const proto=field.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:
+       field.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;
+   const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+   if(!setter)throw Error('Native form field setter missing');
+   setter.call(field,String(value));
+   field.dispatchEvent(new Event('input',{bubbles:true}));
+   field.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  setForgeField('cd_scene_json',json);
+  setForgeField('cd_archive_b64',archive);
+  setForgeField('cd_model',settings.model);
+  setForgeField('cd_mode',settings.strategy);
+  setForgeField('cd_width',doc.canvas.width);
+  setForgeField('cd_height',doc.canvas.height);
+  setForgeField('cd_tile',settings.tile==='auto'?512:settings.tile);
+  const button=host.querySelector('#cd_submit button, button#cd_submit');
+  if(!button)throw Error('Forge generation action unavailable');
+  button.click();
+  toast('CRF transferred to Forge',false,'Generated image or error appears below the editor');
  }catch(e){toast('Generation transfer blocked: '+e.message,true)}
 }
-window.addEventListener('message',e=>{
- if(e.source!==window.parent)return;
- if(e.data?.kind==='coherent-diffusion-transfer-error-v1')
-   toast('Forge form rejected transfer: '+String(e.data.detail||'unknown error'),true);
-});
 // UI events
 $('modelSelect').onchange=e=>{settings.model=e.target.value;saveSoon();render();toast('Model preset selected',false,settings.model==='anima'?'Anima Q4 route requires runtime compatibility verification':'SDXL backend design view')};
 $('strategySelect').onchange=e=>{settings.strategy=e.target.value;saveSoon();if(settings.strategy==='direct')toast('Direct tiled is experimental',false,'Global coherence without a progressive anchor is not validated')};
