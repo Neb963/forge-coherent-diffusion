@@ -38,6 +38,24 @@ class AnimaFlowTests(unittest.TestCase):
         self.assertEqual(len(result.steps), 2)
         self.assertEqual(result.steps[-1].next_sigma, 0)
 
+    def test_constant_flow_velocity_and_exact_sigma_timeline(self):
+        from coherent_diffusion.scheduler.anima_flow import anima_noise, synchronized_flow
+        sigmas = (1.0, 0.75, 0.3, 0.0)
+        v = anima_noise(self.plan, 111, 1.0)
+        sequence = []
+        def native_kmodel_x0(crop, sigma, tile):
+            sequence.append((sigma,tile.index))
+            # Forge KModel prediction_type="const": x0=x-sigma*velocity.
+            return crop - sigma * 0.125
+        r = synchronized_flow(self.plan, v, sigmas, native_kmodel_x0,
+                              patch_spatial=2)
+        self.assertEqual([x.sigma for x in r.steps], list(sigmas[:-1]))
+        for step, sigma in enumerate(sigmas[:-1]):
+            self.assertEqual(
+                sequence[step*len(self.plan.windows):(step+1)*len(self.plan.windows)],
+                [(sigma,t.index) for t in self.plan.windows])
+        self.assertTrue(torch.allclose(r.latent, v - 0.125, atol=1e-6))
+
     def test_order_independent_and_pointwise_untiled_baseline(self):
         from coherent_diffusion.scheduler.anima_flow import (
             anima_noise, synchronized_flow,
