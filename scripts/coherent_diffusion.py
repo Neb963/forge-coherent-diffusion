@@ -62,7 +62,7 @@ def editor_tab():
                 "load checkpoints or change the native txt2img sampler. Click **Generate image** "
                 "in the canvas to transfer its CRF, or use these controls directly. "
                 "**Unverified installed-host compatibility:** start with a small scene. "
-                "Optional controls, regional LoRA ownership, batch, Hires Fix and img2img "
+                "Optional controls, real-host regional LoRA isolation, batch, Hires Fix and img2img "
                 "are not activated without live integration evidence.")
             with gr.Row():
                 model = gr.Dropdown(["sdxl", "anima"], value="sdxl", label="Loaded model family", elem_id="cd_model")
@@ -87,6 +87,14 @@ def editor_tab():
                 with gr.Row():
                     cpu_mib = gr.Number(label="Maximum CPU workspace (MiB)", value=4096, precision=0)
                     window_mib = gr.Number(label="Maximum latent window (MiB)", value=512, precision=0)
+                activate_loras = gr.Checkbox(
+                    value=False, elem_id="cd_activate_loras",
+                    label="Activate regional denoiser LoRAs (experimental, explicit opt-in)")
+                gr.Markdown(
+                    "LoRA references are preserved in your saved CRF. By default they "
+                    "are **bypassed for this run**, and their number is reported in "
+                    "execution evidence. Enable only for real locally registered "
+                    "denoiser LoRAs; regional text-encoder/Q4 LoRAs remain unsupported.")
             with gr.Row():
                 submit = gr.Button("Generate with loaded Forge model", variant="primary", elem_id="cd_submit")
                 stop = gr.Button("Stop coherent generation")
@@ -97,7 +105,8 @@ def editor_tab():
             job = submit.click(
                 fn=_generate_for_ui,
                 inputs=[scene, archive, prompt, negative, model, mode, width, height,
-                        tile, overlap, halo, steps, cfg, seed, cpu_mib, window_mib],
+                        tile, overlap, halo, steps, cfg, seed, cpu_mib, window_mib,
+                        activate_loras],
                 outputs=[output, result],
                 queue=True, show_progress="full")
             stop.click(fn=cancel_generation, inputs=[], outputs=[cancelled], queue=False)
