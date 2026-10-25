@@ -84,6 +84,7 @@ const assert=require('node:assert/strict');
      (document.querySelector('#cd_cancel_state textarea, #cd_cancel_state input')?.value||'').includes('Cancellation requested'),
      null,{timeout:10000});
    await page.getByText('txt2img',{exact:true}).first().click();
+   await page.getByText('Coherent Diffusion — diagnostics',{exact:true}).first().click();
    await page.locator('button#cd_probe_button, #cd_probe_button button').click();
    await page.waitForFunction(()=>
      (document.querySelector('#cd_probe_evidence')?.innerText||'').includes('SMOKE_INSPECT_BACKEND_CALLED'),
