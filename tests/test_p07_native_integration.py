@@ -158,6 +158,7 @@ class PerRunLoRAIntent(unittest.TestCase):
                              "example_local_texture_lora")
 
 
+@unittest.skipIf(torch is None, "LoRA registry preflight uses regional Torch source contract")
 class OptInLoRAPreflight(unittest.TestCase):
     def test_registered_local_only_and_rejects_unknown_before_generation(self):
         from coherent_diffusion.forge_bridge.regional import UnsupportedRegional
