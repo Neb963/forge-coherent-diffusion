@@ -31,6 +31,8 @@ class QualityPlan:
               anchor_sigmas=None, anchor_factor: int = 2,
               max_anchor_pixels: int = 1_048_576,
               global_interaction: str = "none") -> "QualityPlan":
+        if not isinstance(target, TilePlan):
+            raise ValueError("Target requires a P03 SDXL TilePlan")
         if mode not in ("direct", "progressive"):
             raise ValueError("Only direct and progressive SDXL modes are implemented")
         if global_interaction != "none":
@@ -116,8 +118,23 @@ def execute_quality(
     try:
         if not isinstance(quality, QualityPlan):
             raise ValueError("Expected a validated QualityPlan")
-        if type(seed) is not int:
-            raise ValueError("Integer global seed required")
+        if not isinstance(quality.target, TilePlan):
+            raise ValueError("Invalid target SDXL tile plan")
+        if quality.mode not in ("direct", "progressive") or quality.global_interaction != "none":
+            raise ValueError("Unsupported or altered quality mode")
+        _validate_schedule(quality.refine_sigmas)
+        if quality.mode == "progressive":
+            if not isinstance(quality.anchor, TilePlan) or quality.anchor_sigmas is None:
+                raise ValueError("Progressive stage requires a validated global anchor")
+            _validate_schedule(quality.anchor_sigmas)
+            if (quality.anchor.width_px * quality.anchor_factor != quality.target.width_px
+                    or quality.anchor.height_px * quality.anchor_factor != quality.target.height_px
+                    or len(quality.anchor.windows) != 1):
+                raise ValueError("Progressive anchor geometry is inconsistent with target")
+        elif quality.anchor is not None or quality.anchor_sigmas is not None:
+            raise ValueError("Direct mode must not run an unexpected anchor")
+        if type(seed) is not int or not 0 <= seed < 2**63:
+            raise ValueError("Explicit seed must be a nonnegative signed 63-bit integer")
         if not callable(predict):
             raise ValueError("Predictor callback required")
         if type(max_cpu_bytes) is not int or type(max_window_bytes) is not int or min(max_cpu_bytes, max_window_bytes) < 1:
