@@ -14,6 +14,9 @@ from html import escape
 from modules import scripts, script_callbacks
 from coherent_diffusion.forge_bridge import inspect_loaded_host, inspect_process
 from coherent_diffusion.forge_bridge.entrypoint import gradio_generate, cancel_generation
+from coherent_diffusion.forge_bridge.diagnostics import (
+    install_gradio_probe, record as debug_record, recent_text as debug_recent)
+install_gradio_probe()
 
 _LAST = None
 _EDITOR_PATH = Path(__file__).resolve().parents[1] / "coherent_diffusion" / "editor" / "index.html"
@@ -37,8 +40,11 @@ def _generate_for_ui(*inputs):
     Never discard the original just because the output exceeds the old
     64-MiB HTML data-URI limit. Gradio versions differ in FileData plumbing.
     """
+    debug_record("ui_generate_submit")
     image, evidence = gradio_generate(*inputs)
     if image is None:
+        debug_record("ui_generation_failed", type=evidence.get("type"),
+                     phase=evidence.get("phase"))
         return "<p role='status'>No image produced. See execution evidence below.</p>", json.dumps(evidence, ensure_ascii=False, indent=2)
     from modules import paths
     outdir = Path(paths.data_path).resolve() / "outputs" / "coherent-diffusion"
@@ -56,6 +62,7 @@ def _generate_for_ui(*inputs):
     buffer = io.BytesIO()
     preview.save(buffer, format="PNG")
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    debug_record("ui_png_saved", width=image.width, height=image.height)
     evidence = {**evidence, "saved_png": str(destination),
                 "preview_width": preview.width, "preview_height": preview.height}
     report = json.dumps(evidence, ensure_ascii=False, indent=2)
@@ -124,6 +131,20 @@ def editor_tab():
                 outputs=[output, result],
                 queue=True, show_progress="full")
             stop.click(fn=cancel_generation, inputs=[], outputs=[cancelled], queue=False)
+        with gr.Accordion("Live diagnostics — persistent redacted events", open=True):
+            gr.Markdown(
+                "Auto-updating server events appear below. Use the always-visible "
+                "**CD live debug → Download logs** button at the bottom right "
+                "of Forge to export these together with browser/Gradio event IDs. "
+                "Raw prompts, CRF documents, tokens and request payloads are not recorded. "
+                "The server journal is retained in Forge outputs/coherent-diffusion/diagnostics/.")
+            debug_log = gr.Textbox(
+                label="Live Python / Gradio events (JSON lines)", lines=11,
+                interactive=False, elem_id="cd_debug_backend",
+                value=debug_recent())
+            debug_clock = gr.Timer(value=2.0, active=True)
+            debug_clock.tick(fn=debug_recent, inputs=[], outputs=[debug_log],
+                             queue=False, show_progress="hidden")
     return [(panel, "Coherent Diffusion", "coherent_diffusion")]
 
 
