@@ -65,6 +65,9 @@ def timed_prediction(*, stage: str, tile: int, sigma: float):
     begun = time.monotonic()
     with _LOCK:
         if _PROGRESS.get("sigma") != (stage, sigma):
+            prior = _PROGRESS.get("sigma")
+            if prior is None or prior[0] != stage:
+                _PROGRESS["step"] = 0
             _PROGRESS["sigma"] = (stage, sigma)
             _PROGRESS["step"] = _PROGRESS.get("step",0)+1
         _PROGRESS["evaluation"] = _PROGRESS.get("evaluation",0)+1
