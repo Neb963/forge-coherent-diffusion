@@ -66,7 +66,8 @@ class RunnerContracts(unittest.TestCase):
         with patch("coherent_diffusion.forge_bridge.sdxl.ForgeSDXL._check_host") as sdxl, \
              patch("coherent_diffusion.forge_bridge.anima.ForgeAnima.check_host", return_value=2) as anima, \
              patch.object(ep, "_model_sigmas",
-                          side_effect=lambda host, family, n: tuple(1-i/n for i in range(n+1))):
+                          side_effect=lambda host, family, n: tuple(1-i/n for i in range(n+1))), \
+             patch.object(ep, "_validate_requested_loras"):
             plan=ep.preflight(host=host, family=family, mode=mode, width=width, height=height,
                               tile=tile, overlap=overlap, halo=halo, steps=steps, cfg=cfg,
                               seed=42.0, cpu_mib=512, window_mib=64, scene_json=scene_json,
