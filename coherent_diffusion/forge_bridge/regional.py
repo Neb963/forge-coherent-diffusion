@@ -162,6 +162,11 @@ class _RegionalRunner:
                 scope.__exit__(None, None, None)
 
     def predict_state(self, state, crop, sigma, tile, stage):
+        from coherent_diffusion.forge_bridge.diagnostics import timed_prediction
+        with timed_prediction(stage=stage, tile=tile.index, sigma=sigma):
+            return self._predict_state_inner(state, crop, sigma, tile, stage)
+
+    def _predict_state_inner(self, state, crop, sigma, tile, stage):
         if self.cancelled is not None and self.cancelled():
             raise InterruptedError("Regional Forge generation cancelled")
         key = (stage, state)
