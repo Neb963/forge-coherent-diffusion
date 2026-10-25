@@ -96,13 +96,13 @@ def _inspect(model: Any, *, source: str) -> dict[str,Any]:
         "capabilities":{
             "positional_global_coordinates":"unverified",
             "solver_prediction_parameterization":"unverified",
-            "synchronized_tiled_backend":"not_implemented_P01",
-            "regional_attention":"not_implemented_P01",
-            "regional_lora":"not_implemented_P01",
-            "controlnet":"unverified",
+            "synchronized_tiled_backend":"P07_opt_in_source_offline_verified_live_unverified",
+            "regional_attention":"prediction_blending_source_only_not_true_attention_patch",
+            "regional_lora":"P07_explicit_opt_in_native_registry_live_unverified",
+            "controlnet":"native_factories_not_wired_P07",
             "sampler_step_sigma":"not_observed_without_sampling",
             "q4_gguf_anima_encode":"not_tested",
-            "post_failure_cleanup":"no_owned_hooks_or_patches",
+            "post_failure_cleanup":"scoped_native_queue_and_patcher_restoration_live_unverified",
         }
     }
 
