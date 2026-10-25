@@ -137,6 +137,9 @@ class AnimaFlowTests(unittest.TestCase):
         self.assertFalse(torch.equal(p.latent,a.latent))
         with self.assertRaises(MemoryError):
             execute_anima(prog,54,pred,max_cpu_bytes=100)
+        from dataclasses import replace
+        with self.assertRaisesRegex(ValueError,"anchor geometry/lineage"):
+            execute_anima(replace(prog, factor=4),54,pred)
         with self.assertRaises(ValueError):
             AnimaQualityPlan.build(self.plan,patch_spatial=2,mode="progressive",
                                    anchor_sigmas=[1,0],refine_sigmas=[1,0],
