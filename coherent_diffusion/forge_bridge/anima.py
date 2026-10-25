@@ -66,8 +66,8 @@ class ForgeAnima:
         if (getattr(vae, "is_wan", False) is not True
                 or getattr(vae, "latent_dim", None) != 3
                 or getattr(vae, "latent_channels", None) != 16
-                or getattr(vae, "upscale_ratio", None) is None
-                or tuple(getattr(vae, "upscale_ratio", ())) [1:] != (8, 8)
+                or not isinstance(getattr(vae, "upscale_ratio", None), tuple)
+                or vae.upscale_ratio[1:] != (8, 8)
                 or not callable(getattr(vae, "decode_tiled", None))
                 or not callable(getattr(getattr(vae, "first_stage_model", None), "process_out", None))):
             raise UnsupportedAnima("Requires native WAN 3D 16-channel tiled VAE")
@@ -189,6 +189,9 @@ def run_forge_anima_quality(host, plan: AnimaQualityPlan, *, prompt: str,
     """Two flow-native modes; reuses one loaded host and its existing text route."""
     if not isinstance(plan, AnimaQualityPlan):
         raise ValueError("Expected Anima quality plan")
+    if device is None:
+        from backend import memory_management
+        device = memory_management.get_torch_device()
     active = None
     stage_name = None
 
@@ -220,7 +223,7 @@ def run_forge_anima_quality(host, plan: AnimaQualityPlan, *, prompt: str,
         inference_dtype = getattr(getattr(model, "model", None), "computation_dtype",
                                   torch.float32)
     return execute_anima(
-        plan, seed, predict, device=device or "cpu",
+        plan, seed, predict, device=device,
         inference_dtype=inference_dtype, cancelled=cancelled,
         progress=progress, cleanup=close,
         max_cpu_bytes=max_cpu_bytes, max_window_bytes=max_window_bytes)
