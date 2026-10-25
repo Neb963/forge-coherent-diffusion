@@ -258,3 +258,13 @@ Inspection of the live branch at `e090bc7`: the editor and ZIP/CRF path exist, b
 
 
 **Patch checkpoint and evidence (NOT ACCEPTED):** User provided real Forge Neo Anima / WAN / FLOW and GGUF parameter header evidence from live process. This does not prove Q4 generation. Code published in branch commits f055104d (precise unowned hook refusal), a9016bb2 (safe read-only probe and FakeInitialModel detection), dd83efff (negative tests). Local source syntax PASS; six synthetic hook cases PASS, deterministic candidate archive integrity PASS. GitHub Actions run 40209679785 for test commit was in progress when this text was written; do not claim PASS until verified. Live cause UNKNOWN until updated unet_hooks probe is run in actual Forge. Active hooks remain refused: no ControlNet/LoRA processing dropped. Troubleshooting archive coherent-diffusion-P07-hook-diagnostics.zip built locally for the operator; neither checkpoint loader nor Q4 encoder replaced. Native integrated Generate/checkpoint UX remains an OPEN mandatory release blocker, not an optional future improvement.
+
+### P07 live follow-up — numerical sampling_sigmas metadata (2026-10-25)
+
+Actual user-host evidence: live Script.process(p) probe confirms real Anima, FLOW/WAN, installed GGUF parameter markers, no attached ControlNet or extra concatenated condition. During Coherent Diffusion generation model_options contains only transformer_options.sampling_sigmas, dynamically populated after native sampling. This does not establish active LoRA or ControlNet, nor a real successful Q4 generation.
+
+- [x] Guard permits only finite 1-D floating torch sigma tensor or finite plain numeric list/tuple of length 2–1024, with no additional options. Active hooks, malformed metadata, attached controls remain blocked. Previous native sigmas are not reused and host model_options remains unmodified.
+- [x] Publish code at 384338651daa7ed400f3a38786c6af95d735799f; negative coverage at 49c7ea1c1b66cbd6cd891f2ee579e9957863feea; tensor-CI wiring at 426858ec1450c1bccb5abd190515ba84608c062c.
+- [x] GitHub Actions run 40211845801 at exact candidate code commit 426858ec: cpu-tests PASS, tensor-sdxl-offline PASS with new sigma guards, browser-editor PASS. GitHub-built ZIP integrity and packaged Anima blob SHA verified.
+- [ ] Verify actual small Anima/Q4 GPU generation using patched candidate, capture new exact errors or output and measured memory.
+- [ ] Mandatory final UI acceptance remains OPEN: Forge-native model selection/loading on Coherent Diffusion Generate without a separate txt2img generation; finish full integration beyond prototype UI. P07 NOT ACCEPTED and PR stays draft; do not claim real SDXL/Anima success or merge.
