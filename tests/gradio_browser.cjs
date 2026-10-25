@@ -81,7 +81,7 @@ const assert=require('node:assert/strict');
      'SMOKE_BACKEND_CALLED');
    await page.locator('button#cd_stop, #cd_stop button').click();
    await page.waitForFunction(()=>
-     (document.querySelector('#cd_cancel_state textarea,input')?.value||'').includes('Cancellation requested'),
+     (document.querySelector('#cd_cancel_state textarea, #cd_cancel_state input')?.value||'').includes('Cancellation requested'),
      null,{timeout:10000});
    await page.getByText('txt2img',{exact:true}).first().click();
    await page.locator('button#cd_probe_button, #cd_probe_button button').click();
