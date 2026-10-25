@@ -157,5 +157,62 @@ class PerRunLoRAIntent(unittest.TestCase):
                              "example_local_texture_lora")
 
 
+class NativeLoRAIsolation(unittest.TestCase):
+    def test_registered_lora_scope_is_transactional_and_q4_clip_untouched(self):
+        from coherent_diffusion.forge_bridge.regional import (
+            NativeForgeLoRAs, UnsupportedRegional)
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as folder:
+            f = Path(folder) / "real_adapter.safetensors"
+            f.write_bytes(b"source-backed-local-fixture")
+            digest = hashlib.sha256(f.read_bytes()).hexdigest()
+            registry = types.ModuleType("networks")
+            registry.available_network_aliases = {
+                "real": types.SimpleNamespace(filename=str(f))}
+            registry.load_lora_state_dict = lambda p: {"local": "weights"}
+            original_unet, original_clip = object(), object()
+            patched_unet = object()
+            calls = []
+            def load(u, clip, state, weight, te, **kw):
+                self.assertIs(u, original_unet)
+                self.assertIsNone(clip)
+                self.assertEqual(state, {"local": "weights"})
+                self.assertEqual((weight, te), (0.75, 0.0))
+                calls.append("native_load")
+                return patched_unet, None
+            registry.load_lora_for_models = load
+            args_mod = types.ModuleType("backend.args")
+            args_mod.dynamic_args = types.SimpleNamespace(nunchaku=False)
+            backend = types.ModuleType("backend")
+            backend.args = args_mod
+            holder = types.SimpleNamespace(unet=original_unet, clip=original_clip)
+            host = types.SimpleNamespace(
+                forge_objects=holder,
+                forge_objects_original=types.SimpleNamespace(unet=original_unet))
+            manager = NativeForgeLoRAs()
+            with patch.dict(sys.modules, {
+                "networks": registry, "backend": backend, "backend.args": args_mod,
+            }):
+                with self.assertRaisesRegex(UnsupportedRegional, "not present"):
+                    with manager.scoped(host, [("missing", None, 1.0)]):
+                        self.fail("Unknown LoRA must not run")
+                self.assertIs(holder.unet, original_unet)
+                with self.assertRaisesRegex(UnsupportedRegional, "SHA256 mismatch"):
+                    with manager.scoped(host, [("real", "0" * 64, 1.0)]):
+                        self.fail("Incorrect hash must not run")
+                with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
+                    with manager.scoped(host, [("real", digest, 0.75)]):
+                        self.assertIs(holder.unet, patched_unet)
+                        self.assertIs(holder.clip, original_clip)
+                        raise RuntimeError("synthetic failure")
+                self.assertIs(holder.unet, original_unet)
+                self.assertIs(holder.clip, original_clip)
+                self.assertEqual(calls, ["native_load"])
+                # Failure must not leave the process-local LoRA lock held.
+                with manager.scoped(host, [("real", digest, 0.75)]):
+                    self.assertIs(holder.unet, patched_unet)
+                self.assertIs(holder.unet, original_unet)
+
+
 if __name__ == "__main__":
     unittest.main()
