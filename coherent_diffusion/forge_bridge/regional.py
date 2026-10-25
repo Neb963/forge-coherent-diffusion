@@ -182,8 +182,9 @@ class _RegionalRunner:
                 from coherent_diffusion.forge_bridge.diagnostics import record
                 record("conditioning_begin", stage=stage, tile=tile.index)
                 self.cached[key] = cls.from_prompts(self.host, selected, **kwargs)
-                self.condition_cache[key] = (self.cached[key].positive,
-                                             self.cached[key].negative)
+                self.condition_cache[key] = (
+                    getattr(self.cached[key], "positive", None),
+                    getattr(self.cached[key], "negative", None))
                 record("conditioning_done", stage=stage, tile=tile.index)
             adapter = self.cached[key]
             # A change in text conditioning is NOT a model-patcher change.
@@ -196,7 +197,9 @@ class _RegionalRunner:
                          and self.active_key is not None
                          and self.active_key[0] == stage
                          and not self.active_key[1].adapters
-                         and not state.adapters and not self.guidance.requests)
+                         and not state.adapters and not self.guidance.requests
+                         and all(hasattr(self.active, attr) and hasattr(adapter, attr)
+                                 for attr in ("positive", "negative")))
             if can_reuse:
                 self.active.positive, self.active.negative = self.condition_cache[key]
                 self.active_key = key
