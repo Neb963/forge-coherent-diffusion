@@ -19,6 +19,7 @@ from coherent_diffusion.scheduler.guidance import GuidancePlan
 from coherent_diffusion.scheduler.quality import QualityPlan, execute_quality
 from coherent_diffusion.scheduler.regional import (
     PredictionState, UnsupportedRegional, blended_prediction, compile_regional,
+    compile_entity_anchor,
 )
 
 _STATE_LOCK = threading.Lock()
@@ -124,6 +125,19 @@ class _RegionalRunner:
             doc, quality.target, asset_bytes=asset_bytes,
             max_forwards_per_window=max_forwards_per_window,
             include_scene_in_base=quality.mode == "direct")
+        # Preserve globally coherent anchor but introduce only *explicit*
+        # unique-entity regions at its own patch-aligned low-res grid.
+        # All ordinary regional prompts/LoRAs remain refinement-only.
+        self.anchor_regional = (
+            compile_entity_anchor(
+                doc, quality.anchor, asset_bytes=asset_bytes,
+                max_forwards_per_window=max_forwards_per_window)
+            if quality.mode == "progressive" and quality.anchor is not None
+            else None)
+        if self.anchor_regional is not None:
+            from coherent_diffusion.forge_bridge.diagnostics import record
+            record("anchor_entity_routing",
+                   region_states=len(self.anchor_regional.states))
         if text_mode not in ("prediction", "native_sdxl_masks"):
             raise UnsupportedRegional("Unknown regional text execution mode")
         if text_mode == "native_sdxl_masks" and (model != "sdxl" or guidance):
@@ -301,7 +315,11 @@ class _RegionalRunner:
 
     def predict(self, crop, sigma, tile, stage):
         if stage == "anchor":
-            return self.predict_state(self.anchor, crop, sigma, tile, stage)
+            if self.anchor_regional is None:
+                return self.predict_state(self.anchor, crop, sigma, tile, stage)
+            return blended_prediction(
+                self.anchor_regional, tile, crop, sigma, stage,
+                self.predict_state, cancelled=self.cancelled, allow_anchor=True)
         if self.text_mode == "native_sdxl_masks":
             return self.predict_native_masked(crop, sigma, tile)
         return blended_prediction(
