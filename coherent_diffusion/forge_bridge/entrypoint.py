@@ -341,9 +341,14 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
     active_regions = sum(1 for r in plan.document["regions"]
                          if r.get("enabled", True) and r["blend"]["weight"] > 0)
     state_upper = active_regions + 1 if plan.has_regions else 1
-    upper = anchor_steps + refine_steps * refine_windows * state_upper
+    from coherent_diffusion.scheduler.regional import anchor_entity_region_ids
+    anchor_entity_regions = (len(anchor_entity_region_ids(plan.document))
+                             if plan.mode == "progressive" and plan.has_regions else 0)
+    anchor_state_upper = 1 + anchor_entity_regions if anchor_entity_regions else 1
+    upper = anchor_steps * anchor_state_upper + refine_steps * refine_windows * state_upper
     start_progress(upper_bound=upper, window_total=refine_windows,
                    region_states=state_upper)
+    debug_record("anchor_routing_plan", region_states=anchor_state_upper)
     try:
         from coherent_diffusion.forge_bridge.quality import run_forge_sdxl_quality
         from coherent_diffusion.forge_bridge.anima import run_forge_anima_quality
