@@ -685,7 +685,67 @@ function openImport(){
   catch(e){message.className='result error';message.textContent='Import blocked: '+e.message}
  };
 }
-function openAdvanced(){openModal('Generation settings · prototype',`<p class="modal-sub">These controls illustrate the planned generation interface. They are not connected to Forge Neo in this HTML prototype.</p><div class="statlist"><div class="field-wrap"><label>Sampling steps</label><input type="number" value="30" min="1" max="150"></div><div class="field-wrap"><label>CFG guidance</label><input type="number" value="4.5" min="0" max="30" step=".5"></div><div class="field-wrap"><label>Tile overlap</label><select><option>Auto · adaptive</option><option>64 px</option><option>128 px</option><option>192 px</option></select></div><div class="field-wrap"><label>Memory policy</label><select><option>Auto (sequential tiles)</option><option>Conservative · 4 GB target</option><option>Performance</option></select></div></div><div class="section-info" style="margin-top:16px">The real extension will perform capability checks for SDXL/Anima, sampler compatibility, text encoder availability and LoRA isolation before generation.</div>`,`<button class="btn primary" id="closeAdvanced">Close</button>`);$('closeAdvanced').onclick=closeModal}
+const generationFields=[
+ ['steps','Sampling steps',2,100,1],
+ ['cfg','CFG guidance',0,30,.1],
+ ['overlap','Tile overlap (px)',0,256,64],
+ ['halo','Context halo (px)',0,128,64],
+ ['seed','Seed',0,9007199254740991,1],
+ ['cpu_mib','CPU workspace (MiB)',128,65536,1],
+ ['window_mib','Tile latent-window (MiB)',8,4096,1]
+];
+function validGenerationSetting(name,value){
+ const info=generationFields.find(x=>x[0]===name);
+ if(!info||!Number.isFinite(value)||value<info[2]||value>info[3])return false;
+ if(name==='cfg')return true;
+ if(!Number.isSafeInteger(value))return false;
+ if(['overlap','halo'].includes(name))return value%64===0&&
+      (name!=='overlap'||value<Number(settings.tile));
+ return true;
+}
+function validateGenerationSettings(){
+ for(const [name] of generationFields){
+   if(!validGenerationSetting(name,Number(settings[name])))
+     throw Error('Invalid '+name+'; edit Advanced generation settings');
+ }
+ if(!tileGeometry())throw Error('Invalid tile geometry or canvas size');
+ return true;
+}
+function openAdvanced(){
+ const inputs=generationFields.map(([key,label,min,max,step])=>
+    '<div class="field-wrap"><label for="advanced_'+key+'">'+label+'</label>'+
+    '<input id="advanced_'+key+'" data-generation-setting="'+key+'" type="number"'+
+    ' min="'+min+'" max="'+max+'" step="'+step+'" value="'+settings[key]+'"></div>').join('');
+ openModal('Generation settings · active Forge controls',
+   '<p class="modal-sub">Changes are saved in this browser and transferred to the '+
+   'actual Forge generation controls when you click Generate. Tile grid uses the '+
+   'same tile size and overlap as the backend scheduler.</p>'+
+   '<div class="statlist">'+inputs+'</div>'+
+   '<div id="generationValidation" role="status" class="section-info" '+
+   'style="margin-top:12px">All values synchronized with Forge on Generate.</div>',
+   '<button class="btn primary" id="closeAdvanced">Done</button>');
+ const warning=$('generationValidation');
+ for(const field of document.querySelectorAll('[data-generation-setting]')){
+  const onChange=()=>{
+   const value=Number(field.value),name=field.dataset.generationSetting;
+   if(field.value.trim()===''||!validGenerationSetting(name,value)){
+    field.setAttribute('aria-invalid','true');
+    warning.textContent='Invalid '+name+'; previous valid setting retained.';
+    return;
+   }
+   field.removeAttribute('aria-invalid');
+   settings[name]=value;
+   saveSoon();
+   renderOverlay();
+   warning.textContent='Saved · '+name+' = '+value+'; forwarded to Forge on Generate.';
+  };
+  field.addEventListener('input',onChange);
+  field.addEventListener('change',onChange);
+ }
+ $('closeAdvanced').onclick=()=>{try{validateGenerationSettings();closeModal()}
+   catch(e){warning.textContent=e.message}};
+}
+
 function base64Bytes(bytes){
  if(bytes.length>24*1024*1024)throw Error('CRF archive exceeds local transfer budget');
  const parts=[];
