@@ -278,7 +278,55 @@ function rasterMaskSample(r,x,y){
   warnings.textContent=notes.join(' ');
   influenceReadoutAt(influenceCursor.x,influenceCursor.y);
  }
- function renderOverlay(){paintWeights();const ov=$('overlay');ov.innerHTML='';const show=view!=='image';if(view==='tiles'){const tiles=4,rows=3;for(let i=1;i<tiles;i++)svgEl('line',{x1:i*250,x2:i*250,y1:0,y2:750,stroke:'#f0e7ff','stroke-width':1.5,'stroke-dasharray':'7 8','stroke-opacity':.8});for(let i=1;i<rows;i++)svgEl('line',{x1:0,x2:1000,y1:i*250,y2:i*250,stroke:'#f0e7ff','stroke-width':1.5,'stroke-dasharray':'7 8','stroke-opacity':.8});for(let j=0;j<rows;j++)for(let i=0;i<tiles;i++){const txt=svgEl('text',{x:i*250+12,y:j*250+24,fill:'#fff','font-size':12,'font-family':'sans-serif','font-weight':700,'paint-order':'stroke',stroke:'#17222b','stroke-width':3});txt.textContent=`T${j*tiles+i+1}`}}
+ // Exact equivalent of scheduler/sdxl_sync.py _starts and TilePlan.build.
+function tileStarts(length,size,overlap){
+ if(length<=size)return [0];
+ const stride=size-overlap,final=length-size,starts=[];
+ for(let n=0;n<=final;n+=stride)starts.push(n);
+ if(starts.at(-1)!==final)starts.push(final);
+ return starts;
+}
+function tileGeometry(){
+ const w=scene.canvas.width,h=scene.canvas.height,tile=Number(settings.tile);
+ const overlap=Number(settings.overlap),halo=Number(settings.halo);
+ if(!Number.isInteger(w)||!Number.isInteger(h)||!Number.isInteger(tile)||
+    !Number.isInteger(overlap)||!Number.isInteger(halo)||
+    w<256||h<256||tile<256||tile>1024||overlap<0||overlap>=tile||halo<0||
+    ![w,h,tile,overlap,halo].every(v=>v%8===0))return null;
+ const xs=tileStarts(w,tile,overlap),ys=tileStarts(h,tile,overlap);
+ return {xs,ys,tile,halo,w,h,total:xs.length*ys.length};
+}
+function renderOverlay(){paintWeights();const ov=$('overlay');ov.innerHTML='';const show=view!=='image';
+ const grid=tileGeometry();
+ $('tileStats').textContent=grid?
+   'Tiles: '+grid.total.toLocaleString()+' ('+grid.xs.length+' × '+grid.ys.length+') · '+grid.tile+'px / '+settings.overlap+'px overlap':
+   'Tile grid: invalid settings';
+ if(view==='tiles'&&grid){
+  const maxDraw=1600,sampling=Math.max(1,Math.ceil(grid.total/maxDraw));
+  let n=0;
+  for(const y of grid.ys)for(const x of grid.xs){
+   if(n%sampling===0){
+    const pw=Math.min(grid.tile,grid.w-x),ph=Math.min(grid.tile,grid.h-y);
+    svgEl('rect',{x:x/grid.w*1000,y:y/grid.h*750,
+      width:pw/grid.w*1000,height:ph/grid.h*750,
+      fill:'#bfb6ff','fill-opacity':'.06',
+      stroke:'#f0e7ff','stroke-opacity':'.8',
+      'stroke-width':1,'vector-effect':'non-scaling-stroke',
+      'data-window-index':n});
+    if(grid.total<=250){
+      const txt=svgEl('text',{
+       x:(x+8)/grid.w*1000,y:(y+Math.min(30,ph/2))/grid.h*750,
+       fill:'#fff','font-size':12,'font-family':'sans-serif',
+       'font-weight':700,'paint-order':'stroke',
+       stroke:'#17222b','stroke-width':3,'pointer-events':'none'});
+      txt.textContent='T'+(n+1);
+    }
+   }
+   n++;
+  }
+  if(sampling>1)$('tileStats').textContent+=' · displaying every '+sampling+'th core; count exact';
+ }
+
  if(show){for(const r of sorted())if(r.visible)drawShape(r,r.id===selected);if(polygonDraft.length){svgEl('path',{d:svgPath(polygonDraft),stroke:'#f9f7ff','stroke-width':2,'stroke-dasharray':'5 5',fill:'none','pointer-events':'none'});for(const p of polygonDraft)svgEl('circle',{cx:p[0]*1000,cy:p[1]*750,r:3.5,fill:'#e5e6ff','pointer-events':'none'})}}
  if(interaction?.type==='box-drawing'){const [a,b]=[interaction.start,interaction.current];const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]),w=Math.abs(a[0]-b[0]),h=Math.abs(a[1]-b[1]);svgEl('rect',{x:x*1000,y:y*750,width:w*1000,height:h*750,fill:'#a5a8ff','fill-opacity':'.16',stroke:'#eceaff','stroke-width':2,'stroke-dasharray':'6 5','pointer-events':'none'})}
 }
