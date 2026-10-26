@@ -36,7 +36,11 @@ spec.loader.exec_module(module)
 def isolated_generate(*inputs):
     return None, {"status": "error", "type": "SMOKE_BACKEND_CALLED",
                   "detail": "Gradio Python Generate callback was invoked",
-                  "input_count": len(inputs), "partial_image": False}
+                  "input_count": len(inputs), "partial_image": False,
+                  "family": inputs[4], "width": inputs[6], "height": inputs[7],
+                  "tile": inputs[8], "overlap": inputs[9], "halo": inputs[10],
+                  "steps": inputs[11], "cfg": inputs[12], "seed": inputs[13],
+                  "cpu_mib": inputs[14], "window_mib": inputs[15]}
 module.gradio_generate = isolated_generate
 def probe_ui():
     return {"status": "SMOKE_INSPECT_BACKEND_CALLED"}
