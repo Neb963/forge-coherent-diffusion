@@ -309,8 +309,11 @@ def compile_entity_anchor(doc: dict, plan: TilePlan, *,
     if not ids:
         return None
     if doc["global"]["base_weight"] <= 0:
-        raise UnsupportedRegional(
-            "Spatial entity anchor requires a positive global base coefficient")
+        # Existing CRF permits zero baseline when a full-canvas region covers
+        # the whole image. Promoting only entity regions would leave uncovered
+        # anchor pixels. Preserve the previous global-only anchor rather than
+        # introducing a new failure for otherwise valid legacy compositions.
+        return None
     scaled = copy.deepcopy(doc)
     width, height = doc["canvas"]["width"], doc["canvas"]["height"]
     factor = min(plan.width_px / width, plan.height_px / height)
