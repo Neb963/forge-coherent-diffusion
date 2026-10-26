@@ -25,7 +25,7 @@ _ALLOWED = frozenset({
     "elapsed_ms", "success", "partial_image", "model_type",
     "route", "api_name", "pid", "component_ids", "handler",
     "stage", "tile", "evaluation", "upper_bound", "completed", "step",
-    "step_total", "region_states", "window_total",
+    "step_total", "region_states", "window_total", "crf_sha256",
 })
 _INSTALLED = False
 _PROGRESS = {"active": False, "status": "idle", "completed": 0, "evaluation": 0,
