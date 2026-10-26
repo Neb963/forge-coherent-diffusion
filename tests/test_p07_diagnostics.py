@@ -29,6 +29,20 @@ class DiagnosticsJournal(unittest.TestCase):
             self.assertTrue(path.with_suffix(".jsonl.1").exists())
             self.assertLessEqual(path.stat().st_size,650)
 
+    def test_authored_crf_hash_is_visible_without_prompt_text(self):
+        digest = "9f" * 32
+        with tempfile.TemporaryDirectory() as root, patch.object(
+                d, "_data_dir", return_value=Path(root)):
+            d.record("tile_plan", family="anima", width=2048, height=1536,
+                     tile=1024, window_total=6, crf_sha256=digest,
+                     prompt="A unique secret prompt", scene_json='{"private":1}')
+            saved = json.loads(d.recent_text(1))
+            self.assertEqual(saved["crf_sha256"], digest)
+            self.assertEqual(saved["window_total"], 6)
+            self.assertNotIn("prompt", saved)
+            self.assertNotIn("scene_json", saved)
+            self.assertNotIn("unique secret", d.diagnostic_file().read_text())
+
     def test_strict_value_redaction(self):
         with tempfile.TemporaryDirectory() as t, patch.object(d,"_data_dir",return_value=Path(t)):
             d.record("failure", type="RuntimeError", route="/queue/join",
