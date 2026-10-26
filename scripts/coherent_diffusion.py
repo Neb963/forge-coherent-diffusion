@@ -35,6 +35,52 @@ def editor_iframe():
             f'srcdoc="{escape(page, quote=True)}"></iframe>')
 
 
+_EDITOR_FIELDS = ("family", "mode", "width", "height", "tile", "overlap",
+                  "halo", "steps", "cfg", "seed", "cpu_mib", "window_mib")
+_EDITOR_ARG_INDEX = (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+
+
+def _resolve_canvas_generation(inputs):
+    """Atomic one-shot editor handoff, independent of Gradio dropdown DOM.
+
+    The CRF remains a pure composition document; UI execution settings are
+    validated separately, cannot mutate LoRA opt-in, and are not retained by
+    subsequent native-form submissions.
+    """
+    if len(inputs) != 18:
+        raise ValueError("Expected 17 native Forge inputs and one canvas handoff")
+    payload = inputs[-1]
+    effective = list(inputs[:-1])
+    if not payload:
+        return effective
+    if not isinstance(payload, str) or len(payload) > 4096:
+        raise ValueError("Canvas generation handoff is malformed or oversized")
+    try:
+        envelope = json.loads(payload)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Canvas generation settings are not valid JSON") from exc
+    if (not isinstance(envelope, dict) or
+            set(envelope) != {"format", "version", "settings"} or
+            envelope["format"] != "coherent-diffusion-generation" or
+            type(envelope["version"]) is not int or envelope["version"] != 1):
+        raise ValueError("Unsupported canvas generation settings envelope")
+    settings = envelope["settings"]
+    if not isinstance(settings, dict) or set(settings) != set(_EDITOR_FIELDS):
+        raise ValueError("Canvas settings keys do not match the verified Forge form")
+    for name, index in zip(_EDITOR_FIELDS, _EDITOR_ARG_INDEX):
+        value = settings[name]
+        if name in ("family", "mode"):
+            if not isinstance(value, str):
+                raise ValueError("Invalid canvas "+name)
+        elif name == "cfg":
+            if type(value) not in (float, int):
+                raise ValueError("Invalid canvas CFG")
+        elif type(value) is not int:
+            raise ValueError("Invalid integer canvas parameter: "+name)
+        effective[index] = value
+    return effective
+
+
 def _generate_for_ui(*inputs):
     """Persist the lossless full PNG and embed only a bounded-size preview.
 
@@ -42,11 +88,20 @@ def _generate_for_ui(*inputs):
     64-MiB HTML data-URI limit. Gradio versions differ in FileData plumbing.
     """
     debug_record("ui_generate_submit")
-    image, evidence = gradio_generate(*inputs)
+    try:
+        effective = _resolve_canvas_generation(inputs)
+        image, evidence = gradio_generate(*effective)
+    except (ValueError, TypeError) as exc:
+        # Clear the one-shot form bridge even when validation fails; an
+        # invalid editor payload must not contaminate later native submits.
+        message = str(exc)[:160]
+        return ("<p role='status'>Invalid canvas generation settings.</p>",
+                json.dumps({"status":"error","type":"InvalidEditorSettings",
+                            "detail":message,"partial_image":False}), "")
     if image is None:
         debug_record("ui_generation_failed", type=evidence.get("type"),
                      phase=evidence.get("phase"))
-        return "<p role='status'>No image produced. See execution evidence below.</p>", json.dumps(evidence, ensure_ascii=False, indent=2)
+        return "<p role='status'>No image produced. See execution evidence below.</p>", json.dumps(evidence, ensure_ascii=False, indent=2), ""
     from modules import paths
     outdir = Path(paths.data_path).resolve() / "outputs" / "coherent-diffusion"
     outdir.mkdir(parents=True, exist_ok=True)
@@ -71,7 +126,7 @@ def _generate_for_ui(*inputs):
             f'style="display:block;max-width:100%;max-height:820px;margin:auto" '
             f'src="data:image/png;base64,{encoded}">'
             f'<p>Lossless full-size PNG saved to Forge outputs/coherent-diffusion/ '
-            f'({image.width} × {image.height}).</p></div>'), report
+            f'({image.width} × {image.height}).</p></div>'), report, ""
 
 
 def _debug_poll():
@@ -110,6 +165,9 @@ def editor_tab():
                 scene = gr.Textbox(label="Validated CRF JSON (optional)", lines=5, elem_id="cd_scene_json")
                 archive = gr.Textbox(label="Verified CRF ZIP transfer (automatically filled by editor)",
                                      lines=1, elem_id="cd_archive_b64")
+                editor_params = gr.Textbox(
+                    label="Canvas generation settings handoff (one-shot, cleared after Generate)",
+                    value="", lines=1, elem_id="cd_editor_settings")
                 with gr.Row():
                     cpu_mib = gr.Number(label="Maximum CPU workspace (MiB)", value=4096, precision=0, elem_id="cd_cpu_mib")
                     window_mib = gr.Number(label="Maximum latent window (MiB)", value=512, precision=0, elem_id="cd_window_mib")
@@ -132,8 +190,8 @@ def editor_tab():
                 fn=_generate_for_ui,
                 inputs=[scene, archive, prompt, negative, model, mode, width, height,
                         tile, overlap, halo, steps, cfg, seed, cpu_mib, window_mib,
-                        activate_loras],
-                outputs=[output, result],
+                        activate_loras, editor_params],
+                outputs=[output, result, editor_params],
                 queue=True, show_progress="full")
             stop.click(fn=cancel_generation, inputs=[], outputs=[cancelled], queue=False)
         with gr.Accordion("Live diagnostics — persistent redacted events", open=True):
