@@ -101,18 +101,18 @@ def editor_tab():
                 negative = gr.Textbox(label="Negative prompt", scale=2)
             with gr.Row():
                 tile = gr.Number(label="Tile (px)", value=512, precision=0, elem_id="cd_tile")
-                overlap = gr.Number(label="Overlap (px)", value=128, precision=0)
-                halo = gr.Number(label="Halo (px)", value=64, precision=0)
-                steps = gr.Number(label="Euler/flow steps", value=20, precision=0)
-                cfg = gr.Number(label="CFG", value=4.5)
-                seed = gr.Number(label="Seed", value=42, precision=0)
+                overlap = gr.Number(label="Overlap (px)", value=128, precision=0, elem_id="cd_overlap")
+                halo = gr.Number(label="Halo (px)", value=64, precision=0, elem_id="cd_halo")
+                steps = gr.Number(label="Euler/flow steps", value=20, precision=0, elem_id="cd_steps")
+                cfg = gr.Number(label="CFG", value=4.5, elem_id="cd_cfg")
+                seed = gr.Number(label="Seed", value=42, precision=0, elem_id="cd_seed")
             with gr.Accordion("CRF import and conservative memory budgets", open=False):
                 scene = gr.Textbox(label="Validated CRF JSON (optional)", lines=5, elem_id="cd_scene_json")
                 archive = gr.Textbox(label="Verified CRF ZIP transfer (automatically filled by editor)",
                                      lines=1, elem_id="cd_archive_b64")
                 with gr.Row():
-                    cpu_mib = gr.Number(label="Maximum CPU workspace (MiB)", value=4096, precision=0)
-                    window_mib = gr.Number(label="Maximum latent window (MiB)", value=512, precision=0)
+                    cpu_mib = gr.Number(label="Maximum CPU workspace (MiB)", value=4096, precision=0, elem_id="cd_cpu_mib")
+                    window_mib = gr.Number(label="Maximum latent window (MiB)", value=512, precision=0, elem_id="cd_window_mib")
                 activate_loras = gr.Checkbox(
                     value=False, elem_id="cd_activate_loras",
                     label="Activate regional denoiser LoRAs (experimental, explicit opt-in)")
