@@ -65,7 +65,7 @@ class AnchorEntityGuidance(unittest.TestCase):
         region = next(s for s in out.states if "one small bright sun" in s.state.prompt)
         baseline = next(s for s in out.states if "Wide coastline" in s.state.prompt)
         self.assertIn("Natural landscape", region.state.prompt)
-        self.assertAlmostEqual(float(region.weight[8, 48]), 0.0, places=5)
+        self.assertAlmostEqual(float(region.weight[8, 3]), 0.0, places=5)
         # Requested sun bbox x=.71-.84, y=.08-.24; anchor pixel center
         # x=.775*512 and y=.16*384 -> latent x=49.5 y=7.5.
         self.assertGreater(float(region.weight[8, 49]), .70)
