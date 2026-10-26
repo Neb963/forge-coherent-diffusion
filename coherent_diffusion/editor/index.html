@@ -841,6 +841,20 @@ async function openGenerate(){
    field.dispatchEvent(new Event('input',{bubbles:true}));
    field.dispatchEvent(new Event('change',{bubbles:true}));
   }
+  // Send the full generation configuration as a single validated,
+  // one-use payload. Direct edits to Gradio dropdown/number DOM nodes are
+  // not a reliable source of backend state in Gradio 4's reactive UI.
+  // CRF remains a pure composition document without execution metadata.
+  const executionSettings={
+   family:settings.model,mode:settings.strategy,
+   width:doc.canvas.width,height:doc.canvas.height,
+   tile:Number(settings.tile),overlap:settings.overlap,halo:settings.halo,
+   steps:settings.steps,cfg:settings.cfg,seed:settings.seed,
+   cpu_mib:settings.cpu_mib,window_mib:settings.window_mib
+  };
+  setForgeField('cd_editor_settings',JSON.stringify({
+   format:'coherent-diffusion-generation',version:1,settings:executionSettings
+  }));
   setForgeField('cd_scene_json',json);
   setForgeField('cd_archive_b64',archive);
   setForgeField('cd_model',settings.model);
@@ -857,6 +871,9 @@ async function openGenerate(){
   setForgeField('cd_window_mib',settings.window_mib);
   const button=host.querySelector('#cd_submit button, button#cd_submit');
   if(!button)throw Error('Forge generation action unavailable');
+  // Gradio 4 controls update asynchronously; wait for the Svelte event cycle
+  // before triggering the exact same Python handler as native Generate.
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   button.click();
   $('forgeGenerationStatus').textContent='Forge: generation submitted · live progress below';
   toast('Generation submitted to Forge',false,'Progress and image preview appear inside this editor');
