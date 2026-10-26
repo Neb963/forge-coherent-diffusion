@@ -6,6 +6,7 @@ import importlib.util
 import sys
 import threading
 import types
+import tempfile
 from pathlib import Path
 
 import gradio as gr
@@ -22,6 +23,10 @@ callbacks=types.ModuleType("modules.script_callbacks")
 callbacks.handlers=[]
 callbacks.on_ui_tabs=lambda fn:callbacks.handlers.append(fn)
 mod.script_callbacks=callbacks
+paths=types.ModuleType("modules.paths")
+paths.data_path=tempfile.mkdtemp(prefix="coherent-gradio-smoke-")
+mod.paths=paths
+sys.modules["modules.paths"]=paths
 sys.modules["modules.script_callbacks"]=callbacks
 sys.modules["modules"]=mod
 sys.modules["modules.scripts"]=scripts
@@ -34,7 +39,10 @@ spec.loader.exec_module(module)
 # These callbacks are deliberately synthetic. Browser tests below verify
 # *transport and handler ownership*, never that Forge GPU inference works.
 def isolated_generate(*inputs):
-    return None, {"status": "error", "type": "SMOKE_BACKEND_CALLED",
+    from PIL import Image
+    preview=Image.new("RGB",(640,384),"navy") if inputs[13] == 777 else None
+    return preview, {"status": "success" if preview else "error",
+                     "type": "SMOKE_BACKEND_CALLED",
                   "detail": "Gradio Python Generate callback was invoked",
                   "input_count": len(inputs), "partial_image": False,
                   "family": inputs[4], "width": inputs[6], "height": inputs[7],
