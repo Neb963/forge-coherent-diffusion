@@ -223,8 +223,13 @@ class ForgeAnima:
         vae = self.host.forge_objects.vae
         # WAN decoder runs its 3D tiled implementation; do not reuse SDXL 2D.
         scaled = vae.first_stage_model.process_out(latent)
-        output = vae.decode_tiled(scaled, tile_x=tile_latent,
-                                  tile_y=tile_latent, overlap=overlap_latent)
+        # Forge's tiled_scale_multidim is decorated @torch.inference_mode().
+        # Its result is an inference tensor; native VAE.process_output performs
+        # inplace add_/div_/clamp_ before returning. Keep that postprocess
+        # inside inference mode, otherwise PyTorch raises on the inplace op.
+        with torch.inference_mode():
+            output = vae.decode_tiled(scaled, tile_x=tile_latent,
+                                      tile_y=tile_latent, overlap=overlap_latent)
         if (not isinstance(output, torch.Tensor) or output.ndim != 5
                 or output.shape[1] != 1 or output.shape[-1] != 3):
             raise UnsupportedAnima("Native WAN decoder output layout unsupported")
