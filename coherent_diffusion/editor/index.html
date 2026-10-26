@@ -307,6 +307,14 @@ function renderOverlay(){paintWeights();const ov=$('overlay');ov.innerHTML='';co
   for(const y of grid.ys)for(const x of grid.xs){
    if(n%sampling===0){
     const pw=Math.min(grid.tile,grid.w-x),ph=Math.min(grid.tile,grid.h-y);
+    if(grid.total<=250&&grid.halo>0){
+      const rx=Math.max(0,x-grid.halo),ry=Math.max(0,y-grid.halo);
+      const rx1=Math.min(grid.w,x+pw+grid.halo),ry1=Math.min(grid.h,y+ph+grid.halo);
+      svgEl('rect',{x:rx/grid.w*1000,y:ry/grid.h*750,
+        width:(rx1-rx)/grid.w*1000,height:(ry1-ry)/grid.h*750,
+        fill:'none',stroke:'#c2b4f8','stroke-opacity':'.24',
+        'stroke-width':.75,'stroke-dasharray':'5 5','pointer-events':'none'});
+    }
     svgEl('rect',{x:x/grid.w*1000,y:y/grid.h*750,
       width:pw/grid.w*1000,height:ph/grid.h*750,
       fill:'#bfb6ff','fill-opacity':'.06',
@@ -325,6 +333,7 @@ function renderOverlay(){paintWeights();const ov=$('overlay');ov.innerHTML='';co
    n++;
   }
   if(sampling>1)$('tileStats').textContent+=' · displaying every '+sampling+'th core; count exact';
+  else $('tileStats').textContent+=' · solid=write core, dashed=read halo';
  }
 
  if(show){for(const r of sorted())if(r.visible)drawShape(r,r.id===selected);if(polygonDraft.length){svgEl('path',{d:svgPath(polygonDraft),stroke:'#f9f7ff','stroke-width':2,'stroke-dasharray':'5 5',fill:'none','pointer-events':'none'});for(const p of polygonDraft)svgEl('circle',{cx:p[0]*1000,cy:p[1]*750,r:3.5,fill:'#e5e6ff','pointer-events':'none'})}}
