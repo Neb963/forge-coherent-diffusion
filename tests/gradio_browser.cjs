@@ -28,6 +28,22 @@ const fs=require('node:fs');
    assert.equal(await frame.locator('#layerList .layer').count(),5,'P02 editor mounted under Gradio');
    await frame.locator('#addRegionBtn').click();
    assert.equal(await frame.locator('#layerList .layer').count(),6,'Gradio-mounted iframe accepts interactions');
+   // Real Gradio numbers must receive the edited HTML controls, not defaults.
+   await frame.locator('#modelSelect').selectOption('anima');
+   await frame.locator('#widthInput').fill('2048');await frame.locator('#widthInput').blur();
+   await frame.locator('#heightInput').fill('1536');await frame.locator('#heightInput').blur();
+   await frame.locator('[data-view="tiles"]').click();
+   assert.match(await frame.locator('#tileStats').innerText(),/Tiles: 20 \\(5 × 4\\)/);
+   await frame.locator('#advancedBtn').click();
+   await frame.locator('#advanced_steps').fill('9');
+   await frame.locator('#advanced_cfg').fill('1.25');
+   await frame.locator('#advanced_overlap').fill('192');
+   await frame.locator('#advanced_halo').fill('128');
+   await frame.locator('#advanced_seed').fill('666');
+   await frame.locator('#advanced_cpu_mib').fill('2048');
+   await frame.locator('#advanced_window_mib').fill('256');
+   await frame.locator('#closeAdvanced').click();
+   assert.match(await frame.locator('#tileStats').innerText(),/Tiles: 30 \\(6 × 5\\)/);
    // Actual editor-to-Gradio bridge, not a simulated frame-alone editor event.
    await frame.locator('#generateBtn').click();
    try {
@@ -74,6 +90,12 @@ const fs=require('node:fs');
    const evidence=JSON.parse(await page.locator('#cd_execution_evidence textarea').inputValue());
    assert.equal(evidence.type,'SMOKE_BACKEND_CALLED');
    assert.equal(evidence.input_count,17,'all UI inputs transferred to backend');
+   for(const [key,expected] of Object.entries({
+     family:'anima',width:2048,height:1536,tile:512,overlap:192,
+     halo:128,steps:9,cfg:1.25,seed:666,cpu_mib:2048,window_mib:256
+   })){
+     assert.equal(evidence[key],expected,'real Gradio backend received editor '+key);
+   }
    // Direct Generate, independent of the iframe bridge, must hit exactly
    // the same Python callback and remain usable after a completed request.
    await page.locator('button#cd_submit, #cd_submit button').click();
