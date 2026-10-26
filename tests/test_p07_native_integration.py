@@ -75,6 +75,7 @@ class NativeQueueLifecycle(unittest.TestCase):
                                       "modules_forge": forge, "modules_forge.main_entry": main_entry}), \
              patch.object(ep, "preflight", return_value=types.SimpleNamespace(\
                  width=512, height=512, tile=512, steps=2, family="anima", mode="direct",\
+                 document_hash="0" * 64,\
                  quality=types.SimpleNamespace(target=types.SimpleNamespace(windows=[object()])))) as preflight, \
              patch.object(ep, "execute", side_effect=run):
             result = ep.gradio_generate(*args())
