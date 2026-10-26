@@ -770,6 +770,7 @@ async function openGenerate(){
   return;
  }
  try{
+  validateGenerationSettings();
   const {doc,images}=await buildExport(),enc=new TextEncoder();
   let json=JSON.stringify(doc),archive='';
   if(images.size){
@@ -801,7 +802,14 @@ async function openGenerate(){
   setForgeField('cd_mode',settings.strategy);
   setForgeField('cd_width',doc.canvas.width);
   setForgeField('cd_height',doc.canvas.height);
-  setForgeField('cd_tile',settings.tile==='auto'?512:settings.tile);
+  setForgeField('cd_tile',settings.tile);
+  setForgeField('cd_overlap',settings.overlap);
+  setForgeField('cd_halo',settings.halo);
+  setForgeField('cd_steps',settings.steps);
+  setForgeField('cd_cfg',settings.cfg);
+  setForgeField('cd_seed',settings.seed);
+  setForgeField('cd_cpu_mib',settings.cpu_mib);
+  setForgeField('cd_window_mib',settings.window_mib);
   const button=host.querySelector('#cd_submit button, button#cd_submit');
   if(!button)throw Error('Forge generation action unavailable');
   button.click();
@@ -811,7 +819,7 @@ async function openGenerate(){
 // UI events
 $('modelSelect').onchange=e=>{settings.model=e.target.value;saveSoon();render();toast('Model preset selected',false,settings.model==='anima'?'Anima Q4 route requires runtime compatibility verification':'SDXL backend design view')};
 $('strategySelect').onchange=e=>{settings.strategy=e.target.value;saveSoon();if(settings.strategy==='direct')toast('Direct tiled is experimental',false,'Global coherence without a progressive anchor is not validated')};
-$('tileSelect').onchange=e=>{settings.tile=e.target.value;saveSoon()};
+$('tileSelect').onchange=e=>{settings.tile=e.target.value;saveSoon();renderOverlay()};
 for(const [id,k] of [['widthInput','width'],['heightInput','height']])$(id).addEventListener('change',e=>{const v=Number(e.target.value);if(!Number.isInteger(v)||v<256||v>16384){render();toast('Resolution must be 256–16384',true);return}mutate(()=>{scene.canvas[k]=v});fit()});
 $('saveBtn').onclick=()=>{if(save())toast('Draft saved in this browser')};
 $('resetBtn').onclick=()=>{if(!confirm('Start a blank composition? Current scene can be restored with Undo. Export any important masks first.'))return;const before=snapshot();scene=initial();scene.regions=[];scene.entities=[];selected=null;pushUndo(before);render();save();toast('New blank composition')};$('exportBtn').onclick=downloadJSON;$('importBtn').onclick=openImport;$('generateBtn').onclick=openGenerate;$('advancedBtn').onclick=openAdvanced;
