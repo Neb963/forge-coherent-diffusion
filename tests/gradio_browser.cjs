@@ -33,7 +33,7 @@ const fs=require('node:fs');
    await frame.locator('#widthInput').fill('2048');await frame.locator('#widthInput').blur();
    await frame.locator('#heightInput').fill('1536');await frame.locator('#heightInput').blur();
    await frame.locator('[data-view="tiles"]').click();
-   assert.match(await frame.locator('#tileStats').innerText(),/Tiles: 20 \\(5 × 4\\)/);
+   assert.match(await frame.locator('#tileStats').innerText(),/Tiles: 20 \(5 × 4\)/);
    await frame.locator('#advancedBtn').click();
    await frame.locator('#advanced_steps').fill('9');
    await frame.locator('#advanced_cfg').fill('1.25');
@@ -43,7 +43,7 @@ const fs=require('node:fs');
    await frame.locator('#advanced_cpu_mib').fill('2048');
    await frame.locator('#advanced_window_mib').fill('256');
    await frame.locator('#closeAdvanced').click();
-   assert.match(await frame.locator('#tileStats').innerText(),/Tiles: 30 \\(6 × 5\\)/);
+   assert.match(await frame.locator('#tileStats').innerText(),/Tiles: 30 \(6 × 5\)/);
    // Actual editor-to-Gradio bridge, not a simulated frame-alone editor event.
    await frame.locator('#generateBtn').click();
    try {
