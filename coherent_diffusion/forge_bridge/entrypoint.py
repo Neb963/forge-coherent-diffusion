@@ -517,7 +517,8 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
                         activate_region_loras=activate_region_loras)
                     debug_record("tile_plan", width=plan.width, height=plan.height,
                                  tile=plan.tile, window_total=len(plan.quality.target.windows),
-                                 steps=plan.steps, family=plan.family, mode=plan.mode)
+                                 steps=plan.steps, family=plan.family, mode=plan.mode,
+                                 crf_sha256=plan.document_hash)
                     stage = "inference_and_decode"
                     debug_record("generation_stage", phase=stage)
                     image, details = execute(
