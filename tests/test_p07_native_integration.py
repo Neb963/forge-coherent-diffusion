@@ -73,7 +73,9 @@ class NativeQueueLifecycle(unittest.TestCase):
         with patch.dict(sys.modules, {"modules": native, "modules.sd_models": sd_models,
                                       "modules.shared": shared, "modules.call_queue": call_queue,
                                       "modules_forge": forge, "modules_forge.main_entry": main_entry}), \
-             patch.object(ep, "preflight", return_value="plan") as preflight, \
+             patch.object(ep, "preflight", return_value=types.SimpleNamespace(\
+                 width=512, height=512, tile=512, steps=2, family="anima", mode="direct",\
+                 quality=types.SimpleNamespace(target=types.SimpleNamespace(windows=[object()])))) as preflight, \
              patch.object(ep, "execute", side_effect=run):
             result = ep.gradio_generate(*args())
         self.assertIs(host.forge_objects, original)
