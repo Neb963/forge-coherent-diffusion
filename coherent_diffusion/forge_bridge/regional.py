@@ -138,6 +138,10 @@ class _RegionalRunner:
             from coherent_diffusion.forge_bridge.diagnostics import record
             record("anchor_entity_routing",
                    region_states=len(self.anchor_regional.states))
+        elif (quality.mode == "progressive" and doc.get("entities") and
+              doc["global"]["base_weight"] == 0):
+            from coherent_diffusion.forge_bridge.diagnostics import record
+            record("anchor_entity_fallback", kind="zero_base")
         if text_mode not in ("prediction", "native_sdxl_masks"):
             raise UnsupportedRegional("Unknown regional text execution mode")
         if text_mode == "native_sdxl_masks" and (model != "sdxl" or guidance):
