@@ -408,6 +408,11 @@ def execute(plan: JobPlan, *, host, cancelled=None, progress=None):
             "family": plan.family, "mode": plan.mode,
             "width": plan.width, "height": plan.height,
             "tile": plan.tile, "overlap": plan.overlap, "halo": plan.halo,
+            "target_tile_count": len(plan.quality.target.windows),
+            "target_tile_grid": {
+                "columns": len({t.write.x0 for t in plan.quality.target.windows}),
+                "rows": len({t.write.y0 for t in plan.quality.target.windows}),
+            },
             "global_anchor": ({"width": plan.quality.anchor.width_px,
                                "height": plan.quality.anchor.height_px,
                                "effective_factor": (plan.quality.anchor_factor if plan.family == "sdxl"
@@ -505,6 +510,9 @@ def gradio_generate(scene_json, archive_b64, prompt, negative, family, mode,
                         halo=halo, steps=steps, cfg=cfg, seed=seed,
                         cpu_mib=cpu_mib, window_mib=window_mib,
                         activate_region_loras=activate_region_loras)
+                    debug_record("tile_plan", width=plan.width, height=plan.height,
+                                 tile=plan.tile, window_total=len(plan.quality.target.windows),
+                                 steps=plan.steps, family=plan.family, mode=plan.mode)
                     stage = "inference_and_decode"
                     debug_record("generation_stage", phase=stage)
                     image, details = execute(
