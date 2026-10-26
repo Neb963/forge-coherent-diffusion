@@ -6,6 +6,7 @@ per-tile independent sampler and no claims about actual visual attribution.
 from __future__ import annotations
 
 import hashlib
+import copy
 import io
 import math
 from dataclasses import dataclass
@@ -271,15 +272,76 @@ def compile_regional(doc: dict, plan: TilePlan, *, asset_bytes=None,
                         tuple(warnings), max_forwards_per_window or len(result))
 
 
+def anchor_entity_region_ids(doc: dict) -> tuple[str, ...]:
+    """Stable ids of active regions explicitly carrying a count-one entity.
+
+    A region without an explicit entity is refined as before. No NLP parsing
+    or inferred object replacement is performed.
+    """
+    if not isinstance(doc, dict):
+        return ()
+    active = {r["id"] for r in doc.get("regions", ())
+              if r.get("enabled", True) and r["blend"]["weight"] > 0}
+    selected = set()
+    for entity in doc.get("entities", ()):
+        if entity.get("count") == 1:
+            selected.update(rid for rid in entity["region_ids"] if rid in active)
+    return tuple(r["id"] for r in doc.get("regions", ()) if r["id"] in selected)
+
+
+def compile_entity_anchor(doc: dict, plan: TilePlan, *,
+                          asset_bytes=None, max_forwards_per_window=None):
+    """Spatially guide count-one entity masks in an existing global overview.
+
+    Anchor geometry can have a slightly different aspect because Anima's DiT
+    patch alignment is coarse. CRF region coordinates are normalized so they
+    are mapped into the *actual* anchor geometry, never copied as target pixels.
+
+    This is targeted x0 blending, NOT hard spatial attention masking; image
+    models may still generate an object outside its desired region.
+    """
+    if not isinstance(plan, TilePlan):
+        raise ValueError("Anchor requires a validated TilePlan")
+    validate_crf(doc)
+    if not doc.get("entities"):
+        return None
+    ids = set(anchor_entity_region_ids(doc))
+    if not ids:
+        return None
+    if doc["global"]["base_weight"] <= 0:
+        raise UnsupportedRegional(
+            "Spatial entity anchor requires a positive global base coefficient")
+    scaled = copy.deepcopy(doc)
+    width, height = doc["canvas"]["width"], doc["canvas"]["height"]
+    factor = min(plan.width_px / width, plan.height_px / height)
+    scaled["canvas"]["width"] = plan.width_px
+    scaled["canvas"]["height"] = plan.height_px
+    scaled["regions"] = [r for r in scaled["regions"] if r["id"] in ids]
+    for region in scaled["regions"]:
+        # A LoRA must never be loaded into the whole-scene anchor patcher.
+        # Optional scoped LoRAs remain exclusively a refinement feature.
+        region["loras"] = []
+        region["blend"]["feather_px"] *= factor
+    scaled["entities"] = [
+        {**e, "region_ids": [rid for rid in e["region_ids"] if rid in ids]}
+        for e in scaled["entities"]
+        if any(rid in ids for rid in e["region_ids"])]
+    return compile_regional(
+        scaled, plan, asset_bytes=asset_bytes,
+        max_forwards_per_window=max_forwards_per_window,
+        include_scene_in_base=True)
+
+
 def blended_prediction(regional: RegionalPlan, tile, crop: torch.Tensor, sigma: float,
-                       stage: str, predict: Callable, *, cancelled=None):
+                       stage: str, predict: Callable, *, cancelled=None,
+                       allow_anchor=False):
     """Blend only predictions from identical frozen crop/sigma, never tile final images.
 
     Caller serializes model/LoRA state transitions and returns denoised x0.
     Works for SDXL [B,4,H,W] and Anima [B,16,1,H,W] without changing native RoPE.
     """
-    if stage == "anchor":
-        raise UnsupportedRegional("Global scene anchor is supplied by the caller, not regional mixing")
+    if stage == "anchor" and allow_anchor is not True:
+        raise UnsupportedRegional("Anchor blending requires an explicit scoped entity plan")
     if crop.ndim not in (4, 5) or (crop.ndim == 5 and (crop.shape[1] != 16 or crop.shape[2] != 1)):
         raise UnsupportedRegional("SDXL 4D or one-frame Anima 5D crop required")
     if not callable(predict) or not isinstance(sigma, (int, float)) or not math.isfinite(sigma):
