@@ -279,7 +279,8 @@ class FullResolutionOutputPersistence(unittest.TestCase):
                 with patch.object(module,"gradio_generate",
                                   return_value=(Image.new("RGB",(3200,1200),"blue"),
                                                 {"status":"success"})):
-                    html, evidence=module._generate_for_ui()
+                    html, evidence, cleared=module._generate_for_ui(*([""]*18))
+                    self.assertEqual(cleared,"")
             data=json.loads(evidence)
             path=Path(data["saved_png"])
             self.assertTrue(path.is_file())
