@@ -102,6 +102,15 @@ const fs=require('node:fs');
    await page.waitForTimeout(1200);
    assert.equal(JSON.parse(await page.locator('#cd_execution_evidence textarea').inputValue()).type,
      'SMOKE_BACKEND_CALLED');
+   // Synthetic result is written through the actual Gradio Python HTML
+   // callback, then mirrored into the editor canvas without a GPU.
+   const nativeSeed=page.locator('#cd_seed input');
+   await nativeSeed.fill('777');
+   await nativeSeed.blur();
+   await page.locator('button#cd_submit, #cd_submit button').click();
+   await page.waitForSelector('#cd_image_result img[alt="Coherent Diffusion generated preview"]',{timeout:20000});
+   await frame.locator('#scenePhoto[src^="data:image/png;base64,"]').waitFor({timeout:12000});
+   assert.match(await frame.locator('#photoTag').innerText(),/GENERATED/);
    await page.locator('button#cd_stop, #cd_stop button').click();
    await page.waitForFunction(()=>
      (document.querySelector('#cd_cancel_state textarea, #cd_cancel_state input')?.value||'').includes('Cancellation requested'),
