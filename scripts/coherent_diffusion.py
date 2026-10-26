@@ -126,7 +126,7 @@ def editor_tab():
                 stop = gr.Button("Stop coherent generation", elem_id="cd_stop")
                 cancelled = gr.Textbox(label="Cancellation", interactive=False, scale=2, elem_id="cd_cancel_state")
             with gr.Row():
-                output = gr.HTML(label="Generated image", value="<p>No generation submitted.</p>")
+                output = gr.HTML(label="Generated image", value="<p>No generation submitted.</p>", elem_id="cd_image_result")
                 result = gr.Textbox(label="Execution evidence / errors", lines=10, interactive=False, elem_id="cd_execution_evidence")
             job = submit.click(
                 fn=_generate_for_ui,
