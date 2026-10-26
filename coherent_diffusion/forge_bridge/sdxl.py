@@ -205,5 +205,9 @@ class ForgeSDXL:
             raise ValueError("Tiled decode requires CPU latent")
         vae = self.host.forge_objects.vae
         scaled = vae.first_stage_model.process_out(latent)
-        return vae.decode_tiled(scaled, tile_x=tile_latent,
-                                tile_y=tile_latent, overlap=overlap_latent)
+        # Forge tiled_scale_multidim constructs inference tensors internally.
+        # Native process_output mutates those tensors inplace, so keep the
+        # entire native tiled decoder call inside the same inference context.
+        with torch.inference_mode():
+            return vae.decode_tiled(scaled, tile_x=tile_latent,
+                                    tile_y=tile_latent, overlap=overlap_latent)
