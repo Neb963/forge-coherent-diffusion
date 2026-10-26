@@ -96,6 +96,16 @@ class AnchorEntityGuidance(unittest.TestCase):
             self.assertEqual(anchor_entity_region_ids(doc), ())
             self.assertIsNone(compile_entity_anchor(doc, self.geometry))
 
+    def test_zero_global_base_does_not_regress_previous_global_anchor(self):
+        from coherent_diffusion.scheduler.regional import (
+            compile_entity_anchor, anchor_entity_region_ids)
+        doc = copy.deepcopy(self.doc)
+        doc["global"]["base_weight"] = 0.0
+        doc["regions"][0]["geometry"]["bbox"] = [0, 0, 1, 1]
+        self.assertEqual(anchor_entity_region_ids(doc), ("sun",))
+        self.assertIsNone(compile_entity_anchor(doc, self.geometry),
+                          "Valid zero-base scenes retain the previous global anchor")
+
     def test_scaled_anchor_with_different_patch_aligned_aspect(self):
         from coherent_diffusion.scheduler.sdxl_sync import TilePlan
         from coherent_diffusion.scheduler.regional import compile_entity_anchor
