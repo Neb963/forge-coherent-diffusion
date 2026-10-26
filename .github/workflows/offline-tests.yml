@@ -18,6 +18,14 @@ jobs:
         run: python -m compileall -q coherent_diffusion scripts tests
       - name: Validate schema, CRF, CPU reference, ZIP assets and probes
         run: python -m unittest discover -s tests -v
+      - name: Build deterministic P07 candidate ZIP
+        run: python scripts/build_release_zip.py
+      - name: Upload unaccepted installable extension candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: coherent-diffusion-P07-candidate
+          path: dist/coherent-diffusion-P07-candidate.zip
+          if-no-files-found: error
   tensor-sdxl-offline:
     runs-on: ubuntu-latest
     steps:
@@ -37,6 +45,22 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_forge_quality_p04.py' -v
       - name: Run P05 Anima flow, absolute RoPE, Forge/Q4-preservation stubs
         run: python -m unittest discover -s tests -p 'test_anima_p05.py' -v
+      - name: Install image conversion dependencies for P07 candidate and P06 masks
+        run: python -m pip install Pillow==11.3.0 numpy==1.26.4
+      - name: P07 offline generation coordination and cancellation regression
+        run: python -m unittest discover -s tests -p 'test_p07_integration.py' -v
+      - name: P07 loaded-host scheduler metadata and unsafe hook gate
+        run: python -m unittest discover -s tests -p 'test_p07_hook_diagnostics.py' -v
+      - name: P07 Forge native loader, queued GPU ownership and LoRA reference preflight
+        run: python -m unittest discover -s tests -p 'test_p07_native_integration.py' -v
+      - name: P07 output resolution stress and adaptive whole-scene overview
+        run: python -m unittest discover -s tests -p 'test_p07_highres.py' -v
+      - name: P07 live Anima prompt switch residency and per-evaluation progress
+        run: python -m unittest discover -s tests -p 'test_p07_progress_latency.py' -v
+      - name: P07 native WAN and SDXL tiled VAE inference-tensor postprocess
+        run: python -m unittest discover -s tests -p 'test_p07_vae_inference.py' -v
+      - name: P07 explicit count-one entity anchor spatial conditioning
+        run: python -m unittest discover -s tests -p 'test_p07_entity_anchor.py' -v
       - name: Install bounded PNG raster decoder for P06 verified masks
         run: python -m pip install Pillow==11.3.0
       - name: Run P06 regional masks, LoRA scope and SDXL/Anima offline contracts

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from .anchor import anchor_dimensions, expected_anchor_dimensions
 from .sdxl_sync import (
     RunResult, StepInfo, Tile, TilePlan, seeded_noise, synchronized_euler,
     _validate_schedule,
@@ -29,7 +30,7 @@ class QualityPlan:
     @classmethod
     def build(cls, target: TilePlan, *, mode: str, refine_sigmas,
               anchor_sigmas=None, anchor_factor: int = 2,
-              max_anchor_pixels: int = 1_048_576,
+              max_anchor_pixels: int | None = None,
               global_interaction: str = "none") -> "QualityPlan":
         if not isinstance(target, TilePlan):
             raise ValueError("Target requires a P03 SDXL TilePlan")
@@ -39,8 +40,7 @@ class QualityPlan:
             raise ValueError("Global interaction experiments are disabled until validated")
         if type(anchor_factor) is not int or anchor_factor not in (2, 4):
             raise ValueError("Anchor factor must be 2 or 4")
-        if type(max_anchor_pixels) is not int or max_anchor_pixels < 1:
-            raise ValueError("Positive bounded anchor pixel budget required")
+
         refine = _validate_schedule(refine_sigmas)
         if mode == "direct":
             if anchor_sigmas is not None:
@@ -49,20 +49,16 @@ class QualityPlan:
         if anchor_sigmas is None:
             raise ValueError("Progressive mode requires a separate anchor sigma schedule")
         anchor_schedule = _validate_schedule(anchor_sigmas)
-        divisor = target.scale * anchor_factor
-        if target.width_px % divisor or target.height_px % divisor:
-            raise ValueError("Anchor dimensions must align exactly; implicit crop forbidden")
-        w = target.width_px // anchor_factor
-        h = target.height_px // anchor_factor
-        if w * h > max_anchor_pixels:
-            raise MemoryError("Anchor exceeds configured global-pass pixel budget")
+        w, h, effective_factor = anchor_dimensions(
+            target, anchor_factor, alignment_px=target.scale,
+            max_anchor_pixels=max_anchor_pixels)
         # Entire anchor is evaluated as a single globally contextual work window.
         # An anchor too large for a forward pass is rejected by memory preflight.
         anchor = TilePlan.build(w, h, max(w, h), 0, 0, scale=target.scale)
         if len(anchor.windows) != 1:
             raise AssertionError("Anchor must have a single global window")
         return cls(mode, target, refine, anchor, anchor_schedule,
-                   anchor_factor, global_interaction)
+                   effective_factor, global_interaction)
 
 
 @dataclass(frozen=True)
@@ -127,8 +123,9 @@ def execute_quality(
             if not isinstance(quality.anchor, TilePlan) or quality.anchor_sigmas is None:
                 raise ValueError("Progressive stage requires a validated global anchor")
             _validate_schedule(quality.anchor_sigmas)
-            if (quality.anchor.width_px * quality.anchor_factor != quality.target.width_px
-                    or quality.anchor.height_px * quality.anchor_factor != quality.target.height_px
+            if ((quality.anchor.width_px, quality.anchor.height_px) !=
+                    expected_anchor_dimensions(quality.target, quality.anchor_factor,
+                                               quality.target.scale)
                     or len(quality.anchor.windows) != 1):
                 raise ValueError("Progressive anchor geometry is inconsistent with target")
         elif quality.anchor is not None or quality.anchor_sigmas is not None:

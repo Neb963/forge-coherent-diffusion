@@ -41,6 +41,48 @@ function readDownloadedScene(downloadPath){
   for(const region of ['sky','sun','ocean','beach','clouds']){
     assert.ok(await page.locator('#overlay [data-region="'+region+'"]').count(), region+' remains visible');
   }
+  // P07: exact tile overlay agrees with backend, not the old fixed illustration.
+  await page.locator('#widthInput').fill('2048');
+  await page.locator('#widthInput').blur();
+  await page.locator('#heightInput').fill('1536');
+  await page.locator('#heightInput').blur();
+  await page.locator('[data-view="tiles"]').click();
+  assert.match(await page.locator('#tileStats').innerText(),/Tiles: 20 \(5 × 4\)/);
+  assert.equal(await page.locator('#overlay rect[data-window-index]').count(),20);
+  await page.locator('#tileSelect').selectOption('768');
+  assert.match(await page.locator('#tileStats').innerText(),/Tiles: 9 \(3 × 3\)/);
+  assert.equal(await page.locator('#overlay rect[data-window-index]').count(),9);
+  await page.locator('#tileSelect').selectOption('1024');
+  assert.match(await page.locator('#tileStats').innerText(),/Tiles: 6 \(3 × 2\)/);
+  await page.locator('#tileSelect').selectOption('512');
+  await page.locator('#advancedBtn').click();
+  await page.locator('#advanced_steps').fill('8');
+  await page.locator('#advanced_cfg').fill('1.25');
+  await page.locator('#advanced_overlap').fill('192');
+  await page.locator('#advanced_halo').fill('128');
+  await page.locator('#advanced_seed').fill('1234');
+  await page.locator('#advanced_cpu_mib').fill('2048');
+  await page.locator('#advanced_window_mib').fill('256');
+  await page.locator('#closeAdvanced').click();
+  assert.match(await page.locator('#tileStats').innerText(),/Tiles: 30 \(6 × 5\)/);
+  await page.locator('#advancedBtn').click();
+  assert.equal(await page.locator('#advanced_steps').inputValue(),'8');
+  assert.equal(await page.locator('#advanced_cfg').inputValue(),'1.25');
+  assert.equal(await page.locator('#advanced_overlap').inputValue(),'192');
+  assert.equal(await page.locator('#advanced_halo').inputValue(),'128');
+  assert.equal(await page.locator('#advanced_seed').inputValue(),'1234');
+  await page.locator('#closeAdvanced').click();
+  await page.reload();await page.waitForSelector('#layerList .layer');
+  await page.locator('[data-view="tiles"]').click();
+  assert.match(await page.locator('#tileStats').innerText(),/Tiles: 30 \(6 × 5\)/);
+  await page.locator('#advancedBtn').click();
+  assert.equal(await page.locator('#advanced_steps').inputValue(),'8');
+  assert.equal(await page.locator('#advanced_cfg').inputValue(),'1.25');
+  await page.locator('#closeAdvanced').click();
+  // Restore initial canvas and options so unrelated editor tests retain input.
+  await page.locator('#widthInput').fill('4096');await page.locator('#widthInput').blur();
+  await page.locator('#heightInput').fill('3072');await page.locator('#heightInput').blur();
+  await page.locator('[data-view="regions"]').click();
   await page.locator('#addRegionBtn').click();
   assert.equal(await page.locator('#layerList .layer').count(), 6);
   await page.locator('#regionPrompt').fill('an isolated test prompt');

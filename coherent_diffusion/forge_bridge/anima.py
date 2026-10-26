@@ -25,6 +25,60 @@ class _PromptBatch(list):
         self.is_negative_prompt = negative
 
 
+def _check_unet_hooks(unet):
+    """Reject unowned sampling hooks, with a precise non-mutating diagnosis.
+
+    A bare empty transformer_options dict is an inert bookkeeping container
+    used by extension APIs, not an active attention hook. All other nonempty
+    options still require ownership negotiation (P07 live gate).
+    """
+    if getattr(unet, "controlnet_linked_list", None) is not None:
+        raise UnsupportedAnima(
+            "Active UNet ControlNet attachment; native tiled ControlNet integration "
+            "is not yet verified. Disable that ControlNet or use native txt2img.")
+    if getattr(unet, "extra_concat_condition", None) is not None:
+        raise UnsupportedAnima(
+            "Active UNet extra_concat_condition; external/inpaint conditioning "
+            "cannot yet be tiled safely.")
+    options = getattr(unet, "model_options", None)
+    if options == {} or options == {"transformer_options": {}}:
+        return
+    if not isinstance(options, dict):
+        raise UnsupportedAnima("UNet model_options is unavailable or not a dict")
+    nested = options.get("transformer_options")
+    if set(options) == {"transformer_options"} and isinstance(nested, dict) and set(nested) == {"sampling_sigmas"}:
+        # A native/extension sampler can leave its scalar sigma timeline in
+        # transformer_options after normal txt2img. This is numerical schedule
+        # metadata, not a callable hook or a ControlNet attachment. P07 runs
+        # its own independently derived predictor sigmas; do not reuse these
+        # values or mutate the host model_options. Require a bounded finite
+        # 1-D floating sequence and accept no additional option keys.
+        import torch
+        timeline = nested["sampling_sigmas"]
+        if isinstance(timeline, torch.Tensor):
+            valid = (timeline.ndim == 1 and 2 <= timeline.numel() <= 1024
+                     and torch.is_floating_point(timeline)
+                     and bool(torch.isfinite(timeline).all()))
+        elif isinstance(timeline, (tuple, list)):
+            valid = (2 <= len(timeline) <= 1024
+                     and all(type(v) in (float, int) and math.isfinite(v)
+                             for v in timeline))
+        else:
+            valid = False
+        if not valid:
+            raise UnsupportedAnima(
+                "UNet transformer_options.sampling_sigmas has an invalid "
+                "type, shape, length or nonfinite value")
+        return
+    keys = sorted(str(k)[:64] for k in options)[:24]
+    extra = " (+ more)" if len(options) > len(keys) else ""
+    nested_keys = (sorted(str(k)[:64] for k in nested)[:12]
+                   if isinstance(nested, dict) else [])
+    raise UnsupportedAnima(
+        f"Unnegotiated UNet model_options keys: {keys}{extra}; "
+        f"transformer_option_keys: {nested_keys}. "
+        "Active or unknown extension hooks cannot be silently discarded.")
+
 @dataclass
 class ForgeAnima:
     host: object
@@ -71,10 +125,7 @@ class ForgeAnima:
                 or not callable(getattr(vae, "decode_tiled", None))
                 or not callable(getattr(getattr(vae, "first_stage_model", None), "process_out", None))):
             raise UnsupportedAnima("Requires native WAN 3D 16-channel tiled VAE")
-        if (getattr(unet, "controlnet_linked_list", None) is not None
-                or getattr(unet, "extra_concat_condition", None) is not None
-                or getattr(unet, "model_options", None) != {}):
-            raise UnsupportedAnima("Extra ControlNet/LoRA attention hooks require P06 negotiation")
+        _check_unet_hooks(unet)
         if (getattr(host, "ini_latent", None) is not None
                 or bool(getattr(host, "ref_latents", []))):
             raise UnsupportedAnima("Anima reference-image concatenation unsupported by tiled RoPE")
@@ -172,8 +223,13 @@ class ForgeAnima:
         vae = self.host.forge_objects.vae
         # WAN decoder runs its 3D tiled implementation; do not reuse SDXL 2D.
         scaled = vae.first_stage_model.process_out(latent)
-        output = vae.decode_tiled(scaled, tile_x=tile_latent,
-                                  tile_y=tile_latent, overlap=overlap_latent)
+        # Forge's tiled_scale_multidim is decorated @torch.inference_mode().
+        # Its result is an inference tensor; native VAE.process_output performs
+        # inplace add_/div_/clamp_ before returning. Keep that postprocess
+        # inside inference mode, otherwise PyTorch raises on the inplace op.
+        with torch.inference_mode():
+            output = vae.decode_tiled(scaled, tile_x=tile_latent,
+                                      tile_y=tile_latent, overlap=overlap_latent)
         if (not isinstance(output, torch.Tensor) or output.ndim != 5
                 or output.shape[1] != 1 or output.shape[-1] != 3):
             raise UnsupportedAnima("Native WAN decoder output layout unsupported")
@@ -205,17 +261,26 @@ def run_forge_anima_quality(host, plan: AnimaQualityPlan, *, prompt: str,
 
     def predict(crop, sigma, tile, stage):
         nonlocal active, stage_name
-        if active is None:
-            # Lazy: preflight memory/sigmas before any encoder side effects.
-            active = ForgeAnima.from_prompts(
-                host, plan.target, prompt=prompt, negative_prompt=negative_prompt,
-                cfg=cfg, seed=seed, device=device)
-        if stage_name != stage:
-            close()
-            active.plan = plan.anchor if stage == "anchor" else plan.target
-            active.prepare()
-            stage_name = stage
-        return active.predict(crop, sigma, tile)
+        from coherent_diffusion.forge_bridge.diagnostics import record, timed_prediction
+        with timed_prediction(stage=stage, tile=tile.index, sigma=sigma):
+            if active is None:
+                record("conditioning_begin", stage=stage, tile=tile.index)
+                active = ForgeAnima.from_prompts(
+                    host, plan.target, prompt=prompt, negative_prompt=negative_prompt,
+                    cfg=cfg, seed=seed, device=device)
+                record("conditioning_done", stage=stage, tile=tile.index)
+                if cancelled is not None and cancelled():
+                    raise InterruptedError("Cancelled after Anima text encoding")
+            if stage_name != stage:
+                close()
+                active.plan = plan.anchor if stage == "anchor" else plan.target
+                record("model_prepare_begin", stage=stage, tile=tile.index)
+                active.prepare()
+                record("model_prepare_done", stage=stage, tile=tile.index)
+                if cancelled is not None and cancelled():
+                    raise InterruptedError("Cancelled after Anima model preparation")
+                stage_name = stage
+            return active.predict(crop, sigma, tile)
 
     import torch
     if inference_dtype is None:

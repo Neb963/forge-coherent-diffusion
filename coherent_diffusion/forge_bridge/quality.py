@@ -41,19 +41,29 @@ def run_forge_sdxl_quality(host, quality: QualityPlan, *, prompt: str,
 
     def predict(crop, sigma, tile, stage):
         nonlocal active, active_name
-        if active_name != stage:
-            close()
-            selected = quality.anchor if stage == "anchor" else quality.target
-            if selected is None:
-                raise ValueError("Requested missing anchor stage")
-            candidate = ForgeSDXL.from_prompts(
-                host, selected, prompt=prompt, negative_prompt=negative_prompt,
-                cfg=cfg, seed=seed, device=device)
-            # prepare may call its own cleanup if partially successful.
-            candidate.prepare()
-            active = candidate
-            active_name = stage
-        return active.predict(crop, sigma, tile)
+        from coherent_diffusion.forge_bridge.diagnostics import record, timed_prediction
+        with timed_prediction(stage=stage, tile=tile.index, sigma=sigma):
+            if active_name != stage:
+                close()
+                selected = quality.anchor if stage == "anchor" else quality.target
+                if selected is None:
+                    raise ValueError("Requested missing anchor stage")
+                record("conditioning_begin", stage=stage, tile=tile.index)
+                candidate = ForgeSDXL.from_prompts(
+                    host, selected, prompt=prompt, negative_prompt=negative_prompt,
+                    cfg=cfg, seed=seed, device=device)
+                record("conditioning_done", stage=stage, tile=tile.index)
+                if cancelled is not None and cancelled():
+                    raise InterruptedError("Cancelled after SDXL text encoding")
+                record("model_prepare_begin", stage=stage, tile=tile.index)
+                candidate.prepare()
+                record("model_prepare_done", stage=stage, tile=tile.index)
+                if cancelled is not None and cancelled():
+                    candidate.cleanup()
+                    raise InterruptedError("Cancelled after SDXL model preparation")
+                active = candidate
+                active_name = stage
+            return active.predict(crop, sigma, tile)
 
     return execute_quality(
         quality, seed, predict, device=device,

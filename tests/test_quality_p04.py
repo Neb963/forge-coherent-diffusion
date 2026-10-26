@@ -144,9 +144,14 @@ class QualityP04Tests(unittest.TestCase):
         with self.assertRaises(MemoryError):
             build(self.plan,mode="progressive",refine_sigmas=[1,0],
                   anchor_sigmas=[1,0],max_anchor_pixels=1)
-        bad=self.TilePlan.build(120, 96, 64, 16, 8)
-        with self.assertRaises(ValueError):
-            build(bad,mode="progressive",refine_sigmas=[1,0],anchor_sigmas=[1,0])
+        # P07: output dimensions no longer require an exact factor divisor.
+        # Align a full-canvas overview DOWN to the model's latent grid.
+        unusual=self.TilePlan.build(120, 96, 64, 16, 8)
+        adaptive=build(unusual,mode="progressive",
+                       refine_sigmas=[1,0],anchor_sigmas=[1,0])
+        self.assertEqual(adaptive.anchor.width_px % unusual.scale,0)
+        self.assertEqual(adaptive.anchor.height_px % unusual.scale,0)
+        self.assertLess(adaptive.anchor.width_px,unusual.width_px)
 
     def test_two_stage_preflight_blocks_model_before_anchor(self):
         q=self.QualityPlan.build(self.plan,mode="progressive",

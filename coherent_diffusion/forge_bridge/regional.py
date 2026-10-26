@@ -19,6 +19,7 @@ from coherent_diffusion.scheduler.guidance import GuidancePlan
 from coherent_diffusion.scheduler.quality import QualityPlan, execute_quality
 from coherent_diffusion.scheduler.regional import (
     PredictionState, UnsupportedRegional, blended_prediction, compile_regional,
+    compile_entity_anchor,
 )
 
 _STATE_LOCK = threading.Lock()
@@ -116,6 +117,7 @@ class _RegionalRunner:
         self.device = device
         self.loras = loras
         self.cached = {}
+        self.condition_cache = {}
         self.active = None
         self.active_scope = None
         self.active_key = None
@@ -123,6 +125,23 @@ class _RegionalRunner:
             doc, quality.target, asset_bytes=asset_bytes,
             max_forwards_per_window=max_forwards_per_window,
             include_scene_in_base=quality.mode == "direct")
+        # Preserve globally coherent anchor but introduce only *explicit*
+        # unique-entity regions at its own patch-aligned low-res grid.
+        # All ordinary regional prompts/LoRAs remain refinement-only.
+        self.anchor_regional = (
+            compile_entity_anchor(
+                doc, quality.anchor, asset_bytes=asset_bytes,
+                max_forwards_per_window=max_forwards_per_window)
+            if quality.mode == "progressive" and quality.anchor is not None
+            else None)
+        if self.anchor_regional is not None:
+            from coherent_diffusion.forge_bridge.diagnostics import record
+            record("anchor_entity_routing",
+                   region_states=len(self.anchor_regional.states))
+        elif (quality.mode == "progressive" and doc.get("entities") and
+              doc["global"]["base_weight"] == 0):
+            from coherent_diffusion.forge_bridge.diagnostics import record
+            record("anchor_entity_fallback", kind="zero_base")
         if text_mode not in ("prediction", "native_sdxl_masks"):
             raise UnsupportedRegional("Unknown regional text execution mode")
         if text_mode == "native_sdxl_masks" and (model != "sdxl" or guidance):
@@ -161,11 +180,15 @@ class _RegionalRunner:
                 scope.__exit__(None, None, None)
 
     def predict_state(self, state, crop, sigma, tile, stage):
+        from coherent_diffusion.forge_bridge.diagnostics import timed_prediction
+        with timed_prediction(stage=stage, tile=tile.index, sigma=sigma):
+            return self._predict_state_inner(state, crop, sigma, tile, stage)
+
+    def _predict_state_inner(self, state, crop, sigma, tile, stage):
         if self.cancelled is not None and self.cancelled():
             raise InterruptedError("Regional Forge generation cancelled")
         key = (stage, state)
         if key != self.active_key:
-            self.close()
             if key not in self.cached:
                 selected = self.quality.anchor if stage == "anchor" else self.quality.target
                 if selected is None:
@@ -173,20 +196,51 @@ class _RegionalRunner:
                 cls = ForgeSDXL if self.model == "sdxl" else ForgeAnima
                 kwargs = dict(prompt=state.prompt, negative_prompt=state.negative,
                               cfg=self.cfg, seed=self.seed, device=self.device)
-                # Compile through existing Forge encoder; no regional TE-LoRAs.
+                # Encode one time per stage/unique prompt. No Q4 encoder reload.
+                from coherent_diffusion.forge_bridge.diagnostics import record
+                record("conditioning_begin", stage=stage, tile=tile.index)
                 self.cached[key] = cls.from_prompts(self.host, selected, **kwargs)
+                self.condition_cache[key] = (
+                    getattr(self.cached[key], "positive", None),
+                    getattr(self.cached[key], "negative", None))
+                record("conditioning_done", stage=stage, tile=tile.index)
+                if self.cancelled is not None and self.cancelled():
+                    raise InterruptedError("Cancelled after regional text encoding")
             adapter = self.cached[key]
-            if state.adapters:
-                scope = self.loras.scoped(self.host, state.adapters)
-                scope.__enter__()
-                self.active_scope = scope
-            try:
-                adapter.prepare()
-                self.active = adapter
+            # A change in text conditioning is NOT a model-patcher change.
+            # Keep the already prepared Anima UNet resident across prompt-only
+            # region states, including transitions between adjacent windows.
+            # Do not use this path for LoRAs, controls, changed anchor/target
+            # geometry, or SDXL (not yet validated for this optimization).
+            can_reuse = (self.model == "anima"
+                         and self.active is not None and self.active_scope is None
+                         and self.active_key is not None
+                         and self.active_key[0] == stage
+                         and not self.active_key[1].adapters
+                         and not state.adapters and not self.guidance.requests
+                         and all(hasattr(self.active, attr) and hasattr(adapter, attr)
+                                 for attr in ("positive", "negative")))
+            if can_reuse:
+                self.active.positive, self.active.negative = self.condition_cache[key]
                 self.active_key = key
-            except BaseException:
+            else:
                 self.close()
-                raise
+                if state.adapters:
+                    scope = self.loras.scoped(self.host, state.adapters)
+                    scope.__enter__()
+                    self.active_scope = scope
+                try:
+                    from coherent_diffusion.forge_bridge.diagnostics import record
+                    record("model_prepare_begin", stage=stage, tile=tile.index)
+                    adapter.prepare()
+                    self.active = adapter
+                    self.active_key = key
+                    record("model_prepare_done", stage=stage, tile=tile.index)
+                    if self.cancelled is not None and self.cancelled():
+                        raise InterruptedError("Cancelled after model preparation")
+                except BaseException:
+                    self.close()
+                    raise
         if stage == "anchor" or not self.guidance.requests:
             return self.active.predict(crop, sigma, tile)
         start_sigma = self.quality.refine_sigmas[0]
@@ -265,7 +319,11 @@ class _RegionalRunner:
 
     def predict(self, crop, sigma, tile, stage):
         if stage == "anchor":
-            return self.predict_state(self.anchor, crop, sigma, tile, stage)
+            if self.anchor_regional is None:
+                return self.predict_state(self.anchor, crop, sigma, tile, stage)
+            return blended_prediction(
+                self.anchor_regional, tile, crop, sigma, stage,
+                self.predict_state, cancelled=self.cancelled, allow_anchor=True)
         if self.text_mode == "native_sdxl_masks":
             return self.predict_native_masked(crop, sigma, tile)
         return blended_prediction(
@@ -278,7 +336,7 @@ def run_forge_regional_sdxl(host, quality: QualityPlan, doc: dict, *, cfg: float
                             inference_dtype=None, cancelled=None, progress=None,
                             max_cpu_bytes=4 * 1024**3,
                             max_window_bytes=512 * 1024**2,
-                            max_forwards_per_window=16, guidance=(), control_factory=None,
+                            max_forwards_per_window=None, guidance=(), control_factory=None,
                             text_mode="prediction"):
     """Return P04 QualityResult; decoder remains ForgeSDXL.decode_tiled."""
     if not isinstance(quality, QualityPlan):
@@ -305,7 +363,7 @@ def run_forge_regional_anima(host, quality: AnimaQualityPlan, doc: dict, *,
                              cancelled=None, progress=None,
                              max_cpu_bytes=4 * 1024**3,
                              max_window_bytes=512 * 1024**2,
-                             max_forwards_per_window=16, guidance=(), control_factory=None):
+                             max_forwards_per_window=None, guidance=(), control_factory=None):
     """Return P05 AnimaQualityResult; preserve 5D frozen state and RoPE."""
     if not isinstance(quality, AnimaQualityPlan):
         raise ValueError("AnimaQualityPlan required")

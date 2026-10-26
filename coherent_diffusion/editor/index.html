@@ -52,13 +52,13 @@
  <div class="brand"><div class="logo"><svg class="svgicon"><use href="#i-spark"></use></svg></div><div><div class="brand-title">Coherent Diffusion</div><div class="brand-sub">FORGE NEO EXTENSION <span style="color:#8084f9">·</span> UI CONCEPT</div></div></div>
  <div class="project-chip">Coastal daylight study <span style="color:#657082"> / </span> Untitled scene</div>
  <nav class="nav" aria-label="Workspace views"><button data-nav="editor" class="active">Editor</button><button data-nav="global">Prompts</button><button data-nav="diagnostics">Diagnostics</button></nav>
- <div class="top-actions"><span class="sim-label" title="Editing only; inference backend is not connected">P02 · EDITOR ONLY</span><button class="btn hide-tight" id="saveBtn"><svg class="svgicon small"><use href="#i-check"/></svg>Save draft</button><button class="btn hide-tight" id="resetBtn" title="Start a blank composition (confirmation required)">New scene</button><button class="btn hide-tight" id="exportBtn"><svg class="svgicon small"><use href="#i-download"/></svg>Export CRF</button><button class="btn" id="importBtn"><svg class="svgicon small"><use href="#i-upload"/></svg>Import</button><span class="separator"></span><button class="btn primary" id="generateBtn"><svg class="svgicon"><use href="#i-spark"/></svg>Generate image</button></div>
+ <div class="top-actions"><span class="sim-label" title="Runs through installed Forge model when supported; live acceptance pending">P07 · FORGE INTEGRATION</span><button class="btn hide-tight" id="saveBtn"><svg class="svgicon small"><use href="#i-check"/></svg>Save draft</button><button class="btn hide-tight" id="resetBtn" title="Start a blank composition (confirmation required)">New scene</button><button class="btn hide-tight" id="exportBtn"><svg class="svgicon small"><use href="#i-download"/></svg>Export CRF</button><button class="btn" id="importBtn"><svg class="svgicon small"><use href="#i-upload"/></svg>Import</button><span class="separator"></span><button class="btn primary" id="generateBtn"><svg class="svgicon"><use href="#i-spark"/></svg>Generate image</button></div>
 </header>
 <div class="model-strip">
   <div class="field model"><label for="modelSelect">MODEL</label><select id="modelSelect"><option value="sdxl">SDXL · Photographic fine-tune</option><option value="anima">Anima · DiT</option></select></div>
   <div class="field strategy"><label for="strategySelect">GENERATION STRATEGY</label><select id="strategySelect"><option value="progressive">Coherent Progressive</option><option value="direct">Coherent Direct Tiled · experimental</option></select></div>
   <div class="strip-rule"></div><div class="field size"><label for="widthInput">WIDTH</label><input id="widthInput" type="number" min="256" max="16384" step="64" value="4096"></div><div class="dim-sep">×</div><div class="field size"><label for="heightInput">HEIGHT</label><input id="heightInput" type="number" min="256" max="16384" step="64" value="3072"></div>
-  <div class="strip-rule"></div><div class="field tiles"><label for="tileSelect">TILE SIZE</label><select id="tileSelect"><option value="auto">Auto · VRAM</option><option value="512">512 px</option><option value="768">768 px</option><option value="1024">1024 px</option></select></div>
+  <div class="strip-rule"></div><div class="field tiles"><label for="tileSelect">TILE SIZE</label><select id="tileSelect"><option value="256">256 px</option><option value="512" selected>512 px</option><option value="768">768 px</option><option value="1024">1024 px</option></select></div>
   <button class="btn icononly" id="advancedBtn" title="Advanced generation settings" style="margin-top:16px"><svg class="svgicon"><use href="#i-sliders"/></svg></button><div class="space"></div>
   <div><div class="status-chip" title="Design target, not a measured GPU reading"><span class="status-dot"></span><b style="color:#b9e7d4;font-size:11px">Memory-aware</b><span style="color:#7a9e90">·</span><span id="memoryLabel">4 GB target</span></div><div class="small-note" id="encoderLabel" style="text-align:right;margin-top:4px">SDXL · native conditioning</div></div>
 </div>
@@ -91,12 +91,12 @@
    <img class="photo-preview" id="scenePhoto" alt="Reference photo of a shoreline" src="data:,">
    <canvas class="weight-map" id="weightMap" width="128" height="96" aria-label="Approximate relative influence visualization"></canvas>
    <svg class="overlay" id="overlay" viewBox="0 0 1000 750" preserveAspectRatio="none"></svg>
-   <div class="watermark" id="photoTag">REFERENCE · EDITOR ONLY</div>
+   <div class="watermark" id="photoTag">REFERENCE · NOT GENERATED</div>
   </div><div class="canvas-border"></div><span class="corner-marker tl"></span><span class="corner-marker br"></span></div></div>
  <div class="stage-hint hidden" id="stageHint">Click to place points · double-click to finish polygon</div>
  </div>
  <div class="influence-advisory hidden" id="influenceWarnings" role="status" aria-live="polite"></div>
-<div class="view-footer"><div class="info-group"><span><svg class="svgicon tiny"><use href="#i-info"/></svg><span id="coordinateReadout">X — · Y —</span></span><span id="selectionStatus">5 regions · 1 selected</span><span id="influenceReadout" class="hidden" title="Planned mixing coefficients">Hover canvas to inspect planned weights</span><span><span class="status-dot" style="width:6px;height:6px"></span>Saved locally</span></div><div class="zoom-buttons"><button id="undoBtn" title="Undo (Ctrl+Z)"><svg class="svgicon small"><use href="#i-undo"/></svg></button><button id="redoBtn" title="Redo (Ctrl+Shift+Z)"><svg class="svgicon small"><use href="#i-redo"/></svg></button><span class="divider-y"></span><button id="zoomOutBtn" aria-label="Zoom out">−</button><span class="zoom-readout" id="zoomReadout">100%</span><button id="zoomInBtn" aria-label="Zoom in">+</button><button id="zoomFitBtn" title="Fit to viewport">Fit</button></div></div>
+<div class="view-footer"><div class="info-group"><span><svg class="svgicon tiny"><use href="#i-info"/></svg><span id="coordinateReadout">X — · Y —</span></span><span id="selectionStatus">5 regions · 1 selected</span><span id="tileStats" role="status" aria-live="polite">Tile grid: calculating…</span><span id="forgeGenerationStatus" role="status" aria-live="polite" title="Forge runtime progress">Forge: ready</span><span id="influenceReadout" class="hidden" title="Planned mixing coefficients">Hover canvas to inspect planned weights</span><span><span class="status-dot" style="width:6px;height:6px"></span>Saved locally</span></div><div class="zoom-buttons"><button id="undoBtn" title="Undo (Ctrl+Z)"><svg class="svgicon small"><use href="#i-undo"/></svg></button><button id="redoBtn" title="Redo (Ctrl+Shift+Z)"><svg class="svgicon small"><use href="#i-redo"/></svg></button><span class="divider-y"></span><button id="zoomOutBtn" aria-label="Zoom out">−</button><span class="zoom-readout" id="zoomReadout">100%</span><button id="zoomInBtn" aria-label="Zoom in">+</button><button id="zoomFitBtn" title="Fit to viewport">Fit</button></div></div>
  <section class="prompt-deck"><div class="deck-head"><span class="label">Global conditioning <span style="color:#8e96ac;font-size:10px;font-weight:500;margin-left:6px">Applied scene-wide with context-aware routing</span></span><span class="meta">Scene ≠ repeated per tile</span></div><div class="deck-grid"><div class="prompt-col"><label for="sceneInput">SCENE INTENT <span class="muted">· global</span></label><textarea id="sceneInput"></textarea></div><div class="prompt-col"><label for="styleInput">STYLE & QUALITY <span class="muted">· inherited</span></label><textarea id="styleInput"></textarea></div><div class="prompt-col"><label for="negativeInput">NEGATIVE PROMPT</label><textarea id="negativeInput"></textarea></div></div></section>
 </main>
 <aside class="rightbar"><div class="pane-head"><h2 id="inspectorHeading">Region inspector</h2><span class="pill" id="inspectorPill">Selected</span></div><div class="inspector-content" id="inspector"></div><div class="inspector-actions" id="inspectorActions"><button class="btn sm" id="duplicateBtn"><svg class="svgicon small"><use href="#i-copy"/></svg>Duplicate</button><button class="btn sm danger" id="deleteBtn"><svg class="svgicon small"><use href="#i-trash"/></svg>Delete</button></div></aside>
@@ -117,12 +117,12 @@ const colors=['#8db3f8','#f2bb74','#6fd4be','#e5a1ca','#b79bfa','#9ac776','#e6a9
 const initial=()=>({canvas:{width:4096,height:3072,coordinate_system:'normalized_top_left',aspect_policy:'preserve_relative'},global:{scene_prompt:'A wide coastal landscape with one sun above the sea, open ocean and a sandy beach.',style_prompt:'High-end natural landscape photography, authentic color, lifelike textures, subtle optical detail, coherent daylight.',negative_prompt:'CGI, illustration, duplicated objects, unnatural repetition',base_weight:.25},blend:{policy:'weighted'},entities:[{id:'sun-1',description:'single sun',count:1,region_ids:['sun']}],regions:[
 {id:'sky',name:'Atmospheric sky',geometry:{type:'bbox',bbox:[0,0,1,.46]},prompt:'Delicate high clouds, clear atmospheric depth',negative_prompt:'',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.24,blend:{weight:1,feather_px:48,z_index:10},loras:[],color:colors[0]},
 {id:'ocean',name:'Open ocean',geometry:{type:'polygon',points:[[0,.43],[1,.43],[1,.81],[0,.77]]},prompt:'Natural ocean waves, continuous distant horizon',negative_prompt:'',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.26,blend:{weight:1,feather_px:40,z_index:11},loras:[],color:colors[2]},
-{id:'beach',name:'Sand & shoreline',geometry:{type:'bbox',bbox:[0,.77,1,.23]},prompt:'Detailed natural sand, wet reflective shoreline',negative_prompt:'',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.27,blend:{weight:1,feather_px:32,z_index:12},loras:[{id:'beach-detail',name:'example_local_texture_lora',weight:.6,scope:'regional',requested_isolation:'approximate'}],color:colors[3]},
+{id:'beach',name:'Sand & shoreline',geometry:{type:'bbox',bbox:[0,.77,1,.23]},prompt:'Detailed natural sand, wet reflective shoreline',negative_prompt:'',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.27,blend:{weight:1,feather_px:32,z_index:12},loras:[],color:colors[3]},
 {id:'clouds',name:'Soft clouds',geometry:{type:'polygon',points:[[.09,.08],[.44,.09],[.52,.21],[.41,.28],[.07,.22]]},prompt:'Thin coastal cloud formations',negative_prompt:'',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.32,blend:{weight:.65,feather_px:38,z_index:13},loras:[],color:colors[4]},
 {id:'sun',name:'Single sun',geometry:{type:'bbox',bbox:[.71,.08,.13,.16]},prompt:'One small bright sun with subtle localized atmospheric glow',negative_prompt:'multiple suns',inherit_style:true,visible:true,enabled:true,locked:false,display_opacity:.38,blend:{weight:2,feather_px:28,z_index:20},loras:[],color:colors[1]}
 ]});
-let scene=initial(), selected='sun', tool='select', view='regions', nav='editor', zoom=1, panX=0,panY=0, interaction=null, polygonDraft=[], previewImport=null, undoStack=[],redoStack=[], saveTimer=null, settings={model:'sdxl',strategy:'progressive',tile:'auto'}, importMode='replace';
-try{const stored=JSON.parse(localStorage.getItem(KEY)||'null');if(stored?.scene?.regions){scene=stored.scene;selected=scene.regions.at(-1)?.id||null;settings={...settings,...stored.settings}}}catch(e){console.warn('Could not recover saved draft',e)}
+let scene=initial(), selected='sun', tool='select', view='regions', nav='editor', zoom=1, panX=0,panY=0, interaction=null, polygonDraft=[], previewImport=null, undoStack=[],redoStack=[], saveTimer=null, settings={model:'sdxl',strategy:'progressive',tile:'512',steps:20,cfg:4.5,overlap:128,halo:64,seed:42,cpu_mib:4096,window_mib:512}, importMode='replace';
+try{const stored=JSON.parse(localStorage.getItem(KEY)||'null');if(stored?.scene?.regions){scene=stored.scene;selected=scene.regions.at(-1)?.id||null;settings={...settings,...stored.settings};if(settings.tile==='auto')settings.tile='512'}}catch(e){console.warn('Could not recover saved draft',e)}
 const region=()=>scene.regions.find(r=>r.id===selected), sorted=()=>[...scene.regions].sort((a,b)=>(a.blend?.z_index||0)-(b.blend?.z_index||0));
 let idCounter=0;const rid=()=>`region-${Date.now().toString(36)}-${++idCounter}`;
 let storageWarningIssued=false;
@@ -274,16 +274,73 @@ function rasterMaskSample(r,x,y){
   }
   if(!pendingMaskCache.size&&conflicts)notes.push('Different LoRA intents overlap at '+(100*conflicts/total).toFixed(1)+'% of sampled points; isolation is not implemented.');
   const predictionRequests=scene.regions.reduce((n,r)=>n+(r.enabled===false||Number(r.blend?.weight)<=0?0:(r.loras||[]).filter(l=>l.requested_isolation==='prediction').length),0);
-  if(predictionRequests)notes.push(predictionRequests+' prediction-isolation LoRA request(s) are advisory only; no adapter backend is connected in P02.');
+  if(predictionRequests)notes.push(predictionRequests+' prediction-isolation LoRA request(s) require opt-in native LoRA activation; this canvas preview does not prove any model effect.');
   warnings.textContent=notes.join(' ');
   influenceReadoutAt(influenceCursor.x,influenceCursor.y);
  }
- function renderOverlay(){paintWeights();const ov=$('overlay');ov.innerHTML='';const show=view!=='image';if(view==='tiles'){const tiles=4,rows=3;for(let i=1;i<tiles;i++)svgEl('line',{x1:i*250,x2:i*250,y1:0,y2:750,stroke:'#f0e7ff','stroke-width':1.5,'stroke-dasharray':'7 8','stroke-opacity':.8});for(let i=1;i<rows;i++)svgEl('line',{x1:0,x2:1000,y1:i*250,y2:i*250,stroke:'#f0e7ff','stroke-width':1.5,'stroke-dasharray':'7 8','stroke-opacity':.8});for(let j=0;j<rows;j++)for(let i=0;i<tiles;i++){const txt=svgEl('text',{x:i*250+12,y:j*250+24,fill:'#fff','font-size':12,'font-family':'sans-serif','font-weight':700,'paint-order':'stroke',stroke:'#17222b','stroke-width':3});txt.textContent=`T${j*tiles+i+1}`}}
+ // Exact equivalent of scheduler/sdxl_sync.py _starts and TilePlan.build.
+function tileStarts(length,size,overlap){
+ if(length<=size)return [0];
+ const stride=size-overlap,final=length-size,starts=[];
+ for(let n=0;n<=final;n+=stride)starts.push(n);
+ if(starts.at(-1)!==final)starts.push(final);
+ return starts;
+}
+function tileGeometry(){
+ const w=scene.canvas.width,h=scene.canvas.height,tile=Number(settings.tile);
+ const overlap=Number(settings.overlap),halo=Number(settings.halo);
+ if(!Number.isInteger(w)||!Number.isInteger(h)||!Number.isInteger(tile)||
+    !Number.isInteger(overlap)||!Number.isInteger(halo)||
+    w<256||h<256||tile<256||tile>1024||overlap<0||overlap>=tile||halo<0||
+    ![w,h,tile,overlap,halo].every(v=>v%8===0))return null;
+ const xs=tileStarts(w,tile,overlap),ys=tileStarts(h,tile,overlap);
+ return {xs,ys,tile,halo,w,h,total:xs.length*ys.length};
+}
+function renderOverlay(){paintWeights();const ov=$('overlay');ov.innerHTML='';const show=view!=='image';
+ const grid=tileGeometry();
+ $('tileStats').textContent=grid?
+   'Tiles: '+grid.total.toLocaleString()+' ('+grid.xs.length+' × '+grid.ys.length+') · '+grid.tile+'px / '+settings.overlap+'px overlap':
+   'Tile grid: invalid settings';
+ if(view==='tiles'&&grid){
+  const maxDraw=1600,sampling=Math.max(1,Math.ceil(grid.total/maxDraw));
+  let n=0;
+  for(const y of grid.ys)for(const x of grid.xs){
+   if(n%sampling===0){
+    const pw=Math.min(grid.tile,grid.w-x),ph=Math.min(grid.tile,grid.h-y);
+    if(grid.total<=250&&grid.halo>0){
+      const rx=Math.max(0,x-grid.halo),ry=Math.max(0,y-grid.halo);
+      const rx1=Math.min(grid.w,x+pw+grid.halo),ry1=Math.min(grid.h,y+ph+grid.halo);
+      svgEl('rect',{x:rx/grid.w*1000,y:ry/grid.h*750,
+        width:(rx1-rx)/grid.w*1000,height:(ry1-ry)/grid.h*750,
+        fill:'none',stroke:'#c2b4f8','stroke-opacity':'.24',
+        'stroke-width':.75,'stroke-dasharray':'5 5','pointer-events':'none'});
+    }
+    svgEl('rect',{x:x/grid.w*1000,y:y/grid.h*750,
+      width:pw/grid.w*1000,height:ph/grid.h*750,
+      fill:'#bfb6ff','fill-opacity':'.06',
+      stroke:'#f0e7ff','stroke-opacity':'.8',
+      'stroke-width':1,'vector-effect':'non-scaling-stroke',
+      'data-window-index':n});
+    if(grid.total<=250){
+      const txt=svgEl('text',{
+       x:(x+8)/grid.w*1000,y:(y+Math.min(30,ph/2))/grid.h*750,
+       fill:'#fff','font-size':12,'font-family':'sans-serif',
+       'font-weight':700,'paint-order':'stroke',
+       stroke:'#17222b','stroke-width':3,'pointer-events':'none'});
+      txt.textContent='T'+(n+1);
+    }
+   }
+   n++;
+  }
+  if(sampling>1)$('tileStats').textContent+=' · displaying every '+sampling+'th core; count exact';
+  else $('tileStats').textContent+=' · solid=write core, dashed=read halo';
+ }
+
  if(show){for(const r of sorted())if(r.visible)drawShape(r,r.id===selected);if(polygonDraft.length){svgEl('path',{d:svgPath(polygonDraft),stroke:'#f9f7ff','stroke-width':2,'stroke-dasharray':'5 5',fill:'none','pointer-events':'none'});for(const p of polygonDraft)svgEl('circle',{cx:p[0]*1000,cy:p[1]*750,r:3.5,fill:'#e5e6ff','pointer-events':'none'})}}
  if(interaction?.type==='box-drawing'){const [a,b]=[interaction.start,interaction.current];const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]),w=Math.abs(a[0]-b[0]),h=Math.abs(a[1]-b[1]);svgEl('rect',{x:x*1000,y:y*750,width:w*1000,height:h*750,fill:'#a5a8ff','fill-opacity':'.16',stroke:'#eceaff','stroke-width':2,'stroke-dasharray':'6 5','pointer-events':'none'})}
 }
 function fieldInput(id,label,val,type='text',more=''){return `<div class="field-wrap"><label for="${id}">${label}</label><input id="${id}" type="${type}" value="${esc(val)}" ${more}></div>`}
-function renderInspector(){const el=$('inspector');if(nav==='diagnostics'){$('inspectorHeading').textContent='Diagnostics';$('inspectorPill').textContent='Design view';$('inspectorActions').style.display='none';el.innerHTML=`<div class="inspector-top">${icon('sliders')}<div><div class="title">Execution preflight</div><div class="subtitle">Prototype · no runtime measurements</div></div></div><div class="group first"><div class="group-title">Planned execution</div><div class="info-line">Mode<strong>${esc(settings.strategy==='progressive'?'Coherent Progressive':'Direct Tiled')}</strong></div><div class="info-line">Backend<strong>${settings.model==='sdxl'?'SDXL U-Net':'Anima DiT'}</strong></div><div class="info-line">Master latent<strong>Host memory, when necessary</strong></div><div class="info-line">Tile scheduler<strong>Global synchronized steps</strong></div><div class="info-line">LoRA isolation<strong>Capability-gated</strong></div><div class="info-line">Peak VRAM<strong>Not measured</strong></div></div><div class="group"><div class="group-title">Research status</div><div class="section-info">The sampler/backend is not implemented. Values shown here are design targets and must be validated with Forge Neo.</div></div><div class="group"><div class="group-title">Scene analysis</div><div class="statlist"><div class="stat"><b>${scene.regions.length}</b><span>Regions</span></div><div class="stat"><b>${scene.regions.reduce((a,r)=>a+r.loras.length,0)}</b><span>LoRA references</span></div><div class="stat"><b>${(scene.canvas.width*scene.canvas.height/1e6).toFixed(1)}M</b><span>Target pixels</span></div><div class="stat"><b>${scene.entities?.length||0}</b><span>Unique entities</span></div></div></div>`;return}
+function renderInspector(){const el=$('inspector');if(nav==='diagnostics'){$('inspectorHeading').textContent='Diagnostics';$('inspectorPill').textContent='Design view';$('inspectorActions').style.display='none';el.innerHTML=`<div class="inspector-top">${icon('sliders')}<div><div class="title">Execution preflight</div><div class="subtitle">Live editor configuration · VRAM requires runtime measurement</div></div></div><div class="group first"><div class="group-title">Planned execution</div><div class="info-line">Mode<strong>${esc(settings.strategy==='progressive'?'Coherent Progressive':'Direct Tiled')}</strong></div><div class="info-line">Backend<strong>${settings.model==='sdxl'?'SDXL U-Net':'Anima DiT'}</strong></div><div class="info-line">Master latent<strong>Host memory, when necessary</strong></div><div class="info-line">Tile scheduler<strong>Global synchronized steps</strong></div><div class="info-line">LoRA isolation<strong>Capability-gated</strong></div><div class="info-line">Tile windows<strong>${tileGeometry()?.total??"Invalid"}</strong></div><div class="info-line">Sampling steps<strong>${settings.steps}</strong></div><div class="info-line">CFG<strong>${settings.cfg}</strong></div><div class="info-line">Peak VRAM<strong>Not measured</strong></div></div><div class="group"><div class="group-title">Research status</div><div class="section-info">Sampler and regional prediction source are available in the Forge Generate panel below. Actual SDXL/Anima/Q4 image generation, VRAM and output quality still require live validation.</div></div><div class="group"><div class="group-title">Scene analysis</div><div class="statlist"><div class="stat"><b>${scene.regions.length}</b><span>Regions</span></div><div class="stat"><b>${scene.regions.reduce((a,r)=>a+r.loras.length,0)}</b><span>LoRA references</span></div><div class="stat"><b>${(scene.canvas.width*scene.canvas.height/1e6).toFixed(1)}M</b><span>Target pixels</span></div><div class="stat"><b>${scene.entities?.length||0}</b><span>Unique entities</span></div></div></div>`;return}
  if(nav==='global'){$('inspectorHeading').textContent='Global settings';$('inspectorPill').textContent='Composition';$('inspectorActions').style.display='none';el.innerHTML=`<div class="inspector-top"><div class="symbol">${icon('spark')}</div><div><div class="title">Scene-wide conditioning</div><div class="subtitle">Two prompt scopes, one composition</div></div></div><div class="group first"><div class="group-title">Prompt routing</div><div class="section-info">The scene prompt informs global structure. The style prompt can accompany relevant regional conditioning without repeating unique subjects in every tile.</div></div><div class="group"><div class="group-title">Baseline influence</div><div class="field-wrap"><label>Global base weight</label><div class="slider-row"><input type="range" min="0.01" max="1" step="0.01" data-global-range="base_weight" value="${scene.global.base_weight??.25}"><span class="number-out">${Number(scene.global.base_weight??.25).toFixed(2)}</span></div></div><div class="hint">Provides baseline conditioning where regional masks do not cover the canvas.</div></div><div class="group"><div class="group-title">Mask overlap policy</div><select class="full" id="blendPolicy"><option value="weighted" ${scene.blend.policy==='weighted'?'selected':''}>Weighted normalization</option><option value="priority" ${scene.blend.policy==='priority'?'selected':''}>Layer priority</option></select><div class="hint">Backend-accurate effective influence requires P06. Actual model-level blending is not implemented.</div></div><div class="group"><div class="group-title">CRF interoperability</div><button class="btn full" id="openImportInInspector">${icon('upload','small')} Paste composition from LLM</button><button class="btn full" style="margin-top:8px" id="copyCRFInInspector">${icon('copy','small')} Copy scene JSON</button></div>`;return}
  const r=region();$('inspectorHeading').textContent='Region inspector';$('inspectorPill').textContent=r?'Selected':'No selection';$('inspectorActions').style.display=r?'flex':'none';if(!r){el.innerHTML='<div class="section-info">Create or select a region to edit its prompt, geometry, and LoRAs.</div>';return}const bb=getBounds(r),g=r.geometry,unit=x=>(x*100).toFixed(1);
  el.innerHTML=`<div class="inspector-top"><div class="symbol" style="background:${esc(r.color)}38;color:${esc(r.color)}">${icon(g.type==='bbox'?'square':g.type==='polygon'?'poly':'brush')}</div><div style="min-width:0"><div class="title">${esc(r.name)}</div><div class="subtitle">${esc(g.type==='bbox'?'Rectangle':g.type==='polygon'?'Polygon':'Freehand mask')} · ${esc(r.id)}</div></div></div>
@@ -291,7 +348,7 @@ function renderInspector(){const el=$('inspector');if(nav==='diagnostics'){$('in
  <div class="group"><div class="group-title">Regional conditioning</div><div class="field-wrap"><label for="regionPrompt">Positive prompt</label><textarea id="regionPrompt" rows="3" placeholder="Describe only what belongs here">${esc(r.prompt)}</textarea></div><div class="field-wrap" style="margin-top:11px"><label for="regionNegative">Negative prompt</label><textarea id="regionNegative" rows="2" placeholder="Optional local negatives">${esc(r.negative_prompt)}</textarea></div><div style="margin-top:12px" class="selectline"><label>Inherit global style</label><button class="toggle ${r.inherit_style?'on':''}" data-toggle="inherit_style"></button></div></div>
  <div class="group"><div class="group-title">Geometry <span style="color:#7f889a;font-size:10px">normalized %</span></div><div class="grid4">${['X','Y','W','H'].map((t,i)=>fieldInput('geom'+i,t,unit(bb[i]),'number','min="0" max="100" step="0.1"'+(g.type==='mask'?' disabled title="Raster masks are full-canvas"':''))).join('')}</div><p class="hint">${g.type==='bbox'?'Drag the corner handles to resize.':'Edit the shape directly on the canvas. Numeric fields transform its bounding box.'} Canvas coordinates scale with output resolution.</p></div>
  <div class="group"><div class="group-title">Blending & masks</div><div class="field-wrap"><label>Generation weight</label><div class="slider-row"><input id="weightSlider" type="range" min="0" max="3" step="0.05" value="${r.blend.weight}"><span class="number-out" id="weightNumber">${Number(r.blend.weight).toFixed(2)}</span></div></div><div class="field-wrap" style="margin-top:13px"><label>Feather radius</label><div class="slider-row"><input id="featherSlider" type="range" min="0" max="256" step="4" value="${r.blend.feather_px}"><span class="number-out" id="featherNumber">${r.blend.feather_px}px</span></div></div><div class="field-wrap" style="margin-top:13px"><label>Overlay opacity <span class="muted">· UI only</span></label><div class="slider-row"><input id="opacitySlider" type="range" min="0" max=".75" step=".01" value="${r.display_opacity??.28}"><span class="number-out" id="opacityNumber">${Math.round((r.display_opacity??.28)*100)}%</span></div></div></div>
- <div class="group"><div class="group-title">Regional LoRAs <span class="pill">${r.loras.length}</span></div><div class="hint">Intent references only. Adapter activation and spatial isolation need an actual backend.</div><div id="loraCards">${r.loras.map((l,i)=>`<div class="lora-card"><div class="top"><div class="name" title="${esc(l.name)}">${esc(l.name)}</div><button class="mini-ic" data-remove-lora="${i}" title="Remove LoRA">${icon('cross','small')}</button></div><div class="bottom"><span class="muted" style="font-size:10px">Weight</span><input type="range" min="-1" max="2" step=".05" value="${Number(l.weight??1)}" data-lora-weight="${i}"><b style="font-size:10px">${Number(l.weight??1).toFixed(2)}</b></div><div class="field-wrap" style="margin-top:8px"><label>Requested isolation</label><select data-lora-mode="${i}"><option value="approximate" ${l.requested_isolation==='approximate'?'selected':''}>Approximate (fast)</option><option value="prediction" ${l.requested_isolation==='prediction'?'selected':''}>Prediction blending (slower)</option></select></div></div>`).join('')}</div><button class="lora-add" id="addLoraBtn">+ Attach local LoRA reference</button></div>`;
+ <div class="group"><div class="group-title">Regional LoRAs <span class="pill">${r.loras.length}</span></div><div class="hint">Saved LoRA references are not activated by default. Opt in per generation in the Forge panel. Actual regional isolation remains unverified.</div><div id="loraCards">${r.loras.map((l,i)=>`<div class="lora-card"><div class="top"><div class="name" title="${esc(l.name)}">${esc(l.name)}</div><button class="mini-ic" data-remove-lora="${i}" title="Remove LoRA">${icon('cross','small')}</button></div><div class="bottom"><span class="muted" style="font-size:10px">Weight</span><input type="range" min="-1" max="2" step=".05" value="${Number(l.weight??1)}" data-lora-weight="${i}"><b style="font-size:10px">${Number(l.weight??1).toFixed(2)}</b></div><div class="field-wrap" style="margin-top:8px"><label>Requested isolation</label><select data-lora-mode="${i}"><option value="approximate" ${l.requested_isolation==='approximate'?'selected':''}>Approximate (fast)</option><option value="prediction" ${l.requested_isolation==='prediction'?'selected':''}>Prediction blending (slower)</option></select></div></div>`).join('')}</div><button class="lora-add" id="addLoraBtn">+ Attach local LoRA reference</button></div>`;
 }
 function render(){renderLayers();renderInspector();renderOverlay();const c=scene.canvas;$('artboardLabel').textContent=`CANVAS · ${c.width.toLocaleString()} × ${c.height.toLocaleString()}`;$('artboard').style.aspectRatio=`${c.width}/${c.height}`;$('widthInput').value=c.width;$('heightInput').value=c.height;$('globalSummary').textContent=scene.global.scene_prompt.slice(0,91)+((scene.global.scene_prompt.length>91)?'…':'');$('sceneInput').value=scene.global.scene_prompt;$('styleInput').value=scene.global.style_prompt;$('negativeInput').value=scene.global.negative_prompt;$('modelSelect').value=settings.model;$('strategySelect').value=settings.strategy;$('tileSelect').value=settings.tile;$('encoderLabel').textContent=settings.model==='anima'?'Anima · Q4 GGUF route (validate locally)':'SDXL · native conditioning';updateUndoButtons();updateZoom()}
 function updateZoom(){$('artboard').style.transform=`translate(${panX}px,${panY}px) scale(${zoom})`;$('zoomReadout').textContent=Math.round(zoom*100)+'%'}
@@ -637,12 +694,195 @@ function openImport(){
   catch(e){message.className='result error';message.textContent='Import blocked: '+e.message}
  };
 }
-function openAdvanced(){openModal('Generation settings · prototype',`<p class="modal-sub">These controls illustrate the planned generation interface. They are not connected to Forge Neo in this HTML prototype.</p><div class="statlist"><div class="field-wrap"><label>Sampling steps</label><input type="number" value="30" min="1" max="150"></div><div class="field-wrap"><label>CFG guidance</label><input type="number" value="4.5" min="0" max="30" step=".5"></div><div class="field-wrap"><label>Tile overlap</label><select><option>Auto · adaptive</option><option>64 px</option><option>128 px</option><option>192 px</option></select></div><div class="field-wrap"><label>Memory policy</label><select><option>Auto (sequential tiles)</option><option>Conservative · 4 GB target</option><option>Performance</option></select></div></div><div class="section-info" style="margin-top:16px">The real extension will perform capability checks for SDXL/Anima, sampler compatibility, text encoder availability and LoRA isolation before generation.</div>`,`<button class="btn primary" id="closeAdvanced">Close</button>`);$('closeAdvanced').onclick=closeModal}
-function openGenerate(){openModal('Generation not connected',`<div class="inspector-top" style="margin-bottom:16px"><div class="symbol">${icon('spark')}</div><div><div class="title">Coherent ${settings.strategy==='progressive'?'Progressive':'Direct Tiled'}</div><div class="subtitle">${settings.model==='sdxl'?'SDXL':'Anima'} · ${scene.canvas.width} × ${scene.canvas.height} · ${scene.regions.filter(r=>r.enabled).length} enabled regions</div></div></div><p class="modal-sub">The composition editor runs locally. Forge Neo sampling is not connected in P02. Generation is unavailable until the later backend integration phases.</p><div class="section-info">Editor capabilities: region drawing and transforms, layers, masks, prompt and LoRA references, visualization, JSON import/export, and browser-local draft recovery.</div>`,`<button class="btn primary" id="genModalClose">Continue editing</button>`);$('genModalClose').onclick=closeModal}
+const generationFields=[
+ ['steps','Sampling steps',2,100,1],
+ ['cfg','CFG guidance',0,30,.1],
+ ['overlap','Tile overlap (px)',0,256,64],
+ ['halo','Context halo (px)',0,128,64],
+ ['seed','Seed',0,9007199254740991,1],
+ ['cpu_mib','CPU workspace (MiB)',128,65536,1],
+ ['window_mib','Tile latent-window (MiB)',8,4096,1]
+];
+function validGenerationSetting(name,value){
+ const info=generationFields.find(x=>x[0]===name);
+ if(!info||!Number.isFinite(value)||value<info[2]||value>info[3])return false;
+ if(name==='cfg')return true;
+ if(!Number.isSafeInteger(value))return false;
+ if(['overlap','halo'].includes(name))return value%64===0&&
+      (name!=='overlap'||value<Number(settings.tile));
+ return true;
+}
+function validateGenerationSettings(){
+ for(const [name] of generationFields){
+   if(!validGenerationSetting(name,Number(settings[name])))
+     throw Error('Invalid '+name+'; edit Advanced generation settings');
+ }
+ if(!tileGeometry())throw Error('Invalid tile geometry or canvas size');
+ return true;
+}
+function openAdvanced(){
+ const inputs=generationFields.map(([key,label,min,max,step])=>
+    '<div class="field-wrap"><label for="advanced_'+key+'">'+label+'</label>'+
+    '<input id="advanced_'+key+'" data-generation-setting="'+key+'" type="number"'+
+    ' min="'+min+'" max="'+max+'" step="'+step+'" value="'+settings[key]+'"></div>').join('');
+ openModal('Generation settings · active Forge controls',
+   '<p class="modal-sub">Changes are saved in this browser and transferred to the '+
+   'actual Forge generation controls when you click Generate. Tile grid uses the '+
+   'same tile size and overlap as the backend scheduler.</p>'+
+   '<div class="statlist">'+inputs+'</div>'+
+   '<div id="generationValidation" role="status" class="section-info" '+
+   'style="margin-top:12px">All values synchronized with Forge on Generate.</div>',
+   '<button class="btn primary" id="closeAdvanced">Done</button>');
+ const warning=$('generationValidation');
+ for(const field of document.querySelectorAll('[data-generation-setting]')){
+  const onChange=()=>{
+   const value=Number(field.value),name=field.dataset.generationSetting;
+   if(field.value.trim()===''||!validGenerationSetting(name,value)){
+    field.setAttribute('aria-invalid','true');
+    warning.textContent='Invalid '+name+'; previous valid setting retained.';
+    return;
+   }
+   field.removeAttribute('aria-invalid');
+   settings[name]=value;
+   saveSoon();
+   renderOverlay();
+   warning.textContent='Saved · '+name+' = '+value+'; forwarded to Forge on Generate.';
+  };
+  field.addEventListener('input',onChange);
+  field.addEventListener('change',onChange);
+ }
+ $('closeAdvanced').onclick=()=>{try{validateGenerationSettings();closeModal()}
+   catch(e){warning.textContent=e.message}};
+}
+
+// Observe only our own Gradio components. No global polling of Forge state.
+// The iframe shares the host origin via bundled srcdoc; standalone previews
+// remain editable without pretending the native generator is connected.
+let lastGeneratedPreview=null;
+function syncForgeGeneration(){
+ if(window.parent===window)return;
+ try{
+  const host=window.parent.document;
+  const status=host.querySelector('#cd_debug_status textarea, #cd_debug_status input')?.value;
+  if(status)$('forgeGenerationStatus').textContent=status.replace(/\s+/g,' ').slice(0,125);
+  const preview=host.querySelector('#cd_image_result img[alt="Coherent Diffusion generated preview"]');
+  const source=preview?.getAttribute('src');
+  if(source&&source.startsWith('data:image/png;base64,')&&source!==lastGeneratedPreview){
+    lastGeneratedPreview=source;
+    const photo=$('scenePhoto');
+    photo.src=source;
+    photo.alt='Actual Forge generated image preview — full PNG saved under outputs/coherent-diffusion';
+    $('forgeGenerationStatus').textContent='Forge: image generated · switch to Image view';
+    $('photoTag').textContent='GENERATED · FORGE OUTPUT';
+  }
+  const json=host.querySelector('#cd_execution_evidence textarea, #cd_execution_evidence input')?.value;
+  if(json&&json!==syncForgeGeneration.previous){
+    syncForgeGeneration.previous=json;
+    try{
+      const report=JSON.parse(json);
+      if(report?.status==='error'){
+        $('forgeGenerationStatus').textContent='Forge error: '+String(report.type||'unknown').slice(0,80)+
+          (report.phase?' during '+String(report.phase).slice(0,32):'');
+      }
+    }catch(e){}
+  }
+ }catch(e){
+  // Cross-origin or absent Forge parent: editor remains fully usable.
+ }
+}
+setInterval(syncForgeGeneration,2000);
+function base64Bytes(bytes){
+ if(bytes.length>24*1024*1024)throw Error('CRF archive exceeds local transfer budget');
+ const parts=[];
+ for(let i=0;i<bytes.length;i+=32768)parts.push(String.fromCharCode(...bytes.subarray(i,i+32768)));
+ return btoa(parts.join(''));
+}
+async function openGenerate(){
+ save();
+ // Do not edit existing saved CRFs. Region LoRA activation is an explicit
+ // separate Gradio opt-in and disabled by default for safety.
+ const refs=scene.regions.filter(r=>r.enabled!==false && Number(r.blend?.weight)>0)
+   .reduce((n,r)=>n+(r.loras||[]).length,0);
+ if(refs){
+  toast(refs+' regional LoRA reference(s) in this scene',false,
+   'By default they are bypassed only during generation. Enable activation in the Forge Generate panel if intended.');
+ }
+ if(window.parent===window){
+  openModal('Forge Neo host required',
+   '<p class="modal-sub">Open this editor in the Coherent Diffusion tab in Forge Neo to run the installed model. Standalone previews cannot generate images.</p>',
+   '<button class="btn primary" id="genModalClose">Continue editing</button>');
+  $('genModalClose').onclick=closeModal;
+  return;
+ }
+ try{
+  validateGenerationSettings();
+  const {doc,images}=await buildExport(),enc=new TextEncoder();
+  let json=JSON.stringify(doc),archive='';
+  if(images.size){
+   const zip=zipEncode([['composition.json',enc.encode(json)],
+      ['manifest.json',enc.encode(JSON.stringify({format:'coherent-regions-archive',version:1}))],...images]);
+   archive=base64Bytes(zip);
+   json='';
+  }
+  const parentOrigin=window.parent.location.origin;
+  if(!parentOrigin||parentOrigin==='null')throw Error('Trusted Forge origin unavailable');
+  // This bundled srcdoc inherits the Forge origin. A nested Gradio Blocks
+  // instance does not reliably run its js= startup initializer when rendered
+  // under Forge's top-level Blocks, so update only our own fields directly.
+  const host=window.parent.document;
+  function setForgeField(id,value){
+   const root=host.getElementById(id),field=root?.querySelector('textarea,input,select');
+   if(!field)throw Error('Forge generation field unavailable: '+id);
+   const proto=field.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:
+       field.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;
+   const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+   if(!setter)throw Error('Native form field setter missing');
+   setter.call(field,String(value));
+   field.dispatchEvent(new Event('input',{bubbles:true}));
+   field.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  // Send the full generation configuration as a single validated,
+  // one-use payload. Direct edits to Gradio dropdown/number DOM nodes are
+  // not a reliable source of backend state in Gradio 4's reactive UI.
+  // CRF remains a pure composition document without execution metadata.
+  const executionSettings={
+   family:settings.model,mode:settings.strategy,
+   width:doc.canvas.width,height:doc.canvas.height,
+   tile:Number(settings.tile),overlap:settings.overlap,halo:settings.halo,
+   steps:settings.steps,cfg:settings.cfg,seed:settings.seed,
+   cpu_mib:settings.cpu_mib,window_mib:settings.window_mib
+  };
+  setForgeField('cd_editor_settings',JSON.stringify({
+   format:'coherent-diffusion-generation',version:1,settings:executionSettings
+  }));
+  setForgeField('cd_scene_json',json);
+  setForgeField('cd_archive_b64',archive);
+  setForgeField('cd_model',settings.model);
+  setForgeField('cd_mode',settings.strategy);
+  setForgeField('cd_width',doc.canvas.width);
+  setForgeField('cd_height',doc.canvas.height);
+  setForgeField('cd_tile',settings.tile);
+  setForgeField('cd_overlap',settings.overlap);
+  setForgeField('cd_halo',settings.halo);
+  setForgeField('cd_steps',settings.steps);
+  setForgeField('cd_cfg',settings.cfg);
+  setForgeField('cd_seed',settings.seed);
+  setForgeField('cd_cpu_mib',settings.cpu_mib);
+  setForgeField('cd_window_mib',settings.window_mib);
+  const button=host.querySelector('#cd_submit button, button#cd_submit');
+  if(!button)throw Error('Forge generation action unavailable');
+  // Gradio 4 controls update asynchronously; wait for the Svelte event cycle
+  // before triggering the exact same Python handler as native Generate.
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  button.click();
+  $('forgeGenerationStatus').textContent='Forge: generation submitted · live progress below';
+  toast('Generation submitted to Forge',false,'Progress and image preview appear inside this editor');
+ }catch(e){toast('Generation transfer blocked: '+e.message,true)}
+}
 // UI events
 $('modelSelect').onchange=e=>{settings.model=e.target.value;saveSoon();render();toast('Model preset selected',false,settings.model==='anima'?'Anima Q4 route requires runtime compatibility verification':'SDXL backend design view')};
 $('strategySelect').onchange=e=>{settings.strategy=e.target.value;saveSoon();if(settings.strategy==='direct')toast('Direct tiled is experimental',false,'Global coherence without a progressive anchor is not validated')};
-$('tileSelect').onchange=e=>{settings.tile=e.target.value;saveSoon()};
+$('tileSelect').onchange=e=>{settings.tile=e.target.value;saveSoon();renderOverlay()};
 for(const [id,k] of [['widthInput','width'],['heightInput','height']])$(id).addEventListener('change',e=>{const v=Number(e.target.value);if(!Number.isInteger(v)||v<256||v>16384){render();toast('Resolution must be 256–16384',true);return}mutate(()=>{scene.canvas[k]=v});fit()});
 $('saveBtn').onclick=()=>{if(save())toast('Draft saved in this browser')};
 $('resetBtn').onclick=()=>{if(!confirm('Start a blank composition? Current scene can be restored with Undo. Export any important masks first.'))return;const before=snapshot();scene=initial();scene.regions=[];scene.entities=[];selected=null;pushUndo(before);render();save();toast('New blank composition')};$('exportBtn').onclick=downloadJSON;$('importBtn').onclick=openImport;$('generateBtn').onclick=openGenerate;$('advancedBtn').onclick=openAdvanced;

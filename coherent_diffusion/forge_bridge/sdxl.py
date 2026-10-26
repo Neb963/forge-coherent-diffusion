@@ -84,9 +84,13 @@ class ForgeSDXL:
             raise UnsupportedSDXL("ControlNet/LLLite per-tile spatial remapping is P06 only")
         if getattr(unet, "extra_concat_condition", None) is not None:
             raise UnsupportedSDXL("Concat/inpaint conditioning not implemented by P03")
-        options = getattr(unet, "model_options", {})
-        if not isinstance(options, dict) or options:
-            raise UnsupportedSDXL("Nonempty Forge model options/hook state unsupported by P03")
+        # Native ModelPatcher always starts with an empty transformer_options
+        # container. Reject *active* hooks, but not Forge's own bookkeeping.
+        from coherent_diffusion.forge_bridge.anima import _check_unet_hooks
+        try:
+            _check_unet_hooks(unet)
+        except Exception as exc:
+            raise UnsupportedSDXL("Unnegotiated SDXL UNet options: " + str(exc)) from exc
         if getattr(vae, "upscale_ratio", None) != 8 or getattr(vae, "latent_channels", None) != 4:
             raise UnsupportedSDXL("Requires SDXL 4-channel, 8x VAE geometry")
         if not callable(getattr(host, "get_learned_conditioning", None)):
@@ -201,5 +205,9 @@ class ForgeSDXL:
             raise ValueError("Tiled decode requires CPU latent")
         vae = self.host.forge_objects.vae
         scaled = vae.first_stage_model.process_out(latent)
-        return vae.decode_tiled(scaled, tile_x=tile_latent,
-                                tile_y=tile_latent, overlap=overlap_latent)
+        # Forge tiled_scale_multidim constructs inference tensors internally.
+        # Native process_output mutates those tensors inplace, so keep the
+        # entire native tiled decoder call inside the same inference context.
+        with torch.inference_mode():
+            return vae.decode_tiled(scaled, tile_x=tile_latent,
+                                    tile_y=tile_latent, overlap=overlap_latent)
